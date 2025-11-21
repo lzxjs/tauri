@@ -1,0 +1,25 @@
+{
+  "name": "tauri",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
+  },
+  "dependencies": {
+    "@ant-design/icons-vue": "^7.0.1",
+    "@tauri-apps/api": "^2.9.0",
+    "ant-design-vue": "^4.2.6",
+    "vue": "^3.5.24"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.9.4",
+    "@vitejs/plugin-vue": "^6.0.1",
+    "vite": "^7.2.4"
+  }
+}

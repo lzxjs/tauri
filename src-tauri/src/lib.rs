@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use sysinfo::{System, Disks};
+use scraper::{Html, Selector};
 
 #[derive(Serialize, Deserialize)]
 struct SystemInfo {
@@ -33,6 +34,19 @@ struct DiskInfo {
     total_space: u64,
     available_space: u64,
     file_system: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ScrapedElement {
+    text: String,
+    html: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ScrapeResult {
+    success: bool,
+    data: Vec<ScrapedElement>,
+    error: Option<String>,
 }
 
 #[tauri::command]
@@ -102,6 +116,68 @@ fn get_disk_info() -> Vec<DiskInfo> {
     }).collect()
 }
 
+#[tauri::command]
+fn fetch_url(url: String) -> Result<String, String> {
+    match reqwest::blocking::get(&url) {
+        Ok(response) => {
+            match response.text() {
+                Ok(html) => Ok(html),
+                Err(e) => Err(format!("Failed to read response: {}", e)),
+            }
+        }
+        Err(e) => Err(format!("Failed to fetch URL: {}", e)),
+    }
+}
+
+#[tauri::command]
+fn parse_html_by_selector(html: String, selector: String) -> ScrapeResult {
+    let document = Html::parse_document(&html);
+    
+    match Selector::parse(&selector) {
+        Ok(css_selector) => {
+            let elements: Vec<ScrapedElement> = document
+                .select(&css_selector)
+                .map(|element| ScrapedElement {
+                    text: element.text().collect::<String>(),
+                    html: element.html(),
+                })
+                .collect();
+            
+            ScrapeResult {
+                success: true,
+                data: elements,
+                error: None,
+            }
+        }
+        Err(e) => ScrapeResult {
+            success: false,
+            data: Vec::new(),
+            error: Some(format!("Invalid CSS selector: {:?}", e)),
+        },
+    }
+}
+
+#[tauri::command]
+fn scrape_page(url: String, selector: String) -> ScrapeResult {
+    match reqwest::blocking::get(&url) {
+        Ok(response) => {
+            match response.text() {
+                Ok(html) => parse_html_by_selector(html, selector),
+                Err(e) => ScrapeResult {
+                    success: false,
+                    data: Vec::new(),
+                    error: Some(format!("Failed to read response: {}", e)),
+                },
+            }
+        }
+        Err(e) => ScrapeResult {
+            success: false,
+            data: Vec::new(),
+            error: Some(format!("Failed to fetch URL: {}", e)),
+        },
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
@@ -119,7 +195,10 @@ pub fn run() {
       get_system_info,
       get_cpu_info,
       get_memory_info,
-      get_disk_info
+      get_disk_info,
+      fetch_url,
+      parse_html_by_selector,
+      scrape_page
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

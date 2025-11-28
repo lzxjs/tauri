@@ -537,7 +537,7 @@ onUnmounted(() => {
 
 <template>
   <div class="app-launcher">
-    <a-card title="应用批量启动器" :bordered="false">
+    <a-card title="" :bordered="false">
       <template #extra>
         <a-space>
           <!-- 场景选择 -->
@@ -772,6 +772,9 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+:deep .ant-card .ant-card-extra {
+  margin-left: 0;
+}
 .app-launcher {
   width: 100%;
 }

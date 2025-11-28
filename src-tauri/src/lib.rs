@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sysinfo::{System, Disks};
 use scraper::{Html, Selector};
+use std::process::Command as StdCommand;
 
 #[derive(Serialize, Deserialize)]
 struct SystemInfo {
@@ -51,14 +52,37 @@ struct ScrapeResult {
 
 #[tauri::command]
 fn get_system_info() -> SystemInfo {
-    let sys = System::new_all();
-    
     SystemInfo {
         os_name: System::name().unwrap_or_else(|| "Unknown".to_string()),
         os_version: System::os_version().unwrap_or_else(|| "Unknown".to_string()),
         kernel_version: System::kernel_version().unwrap_or_else(|| "Unknown".to_string()),
         hostname: System::host_name().unwrap_or_else(|| "Unknown".to_string()),
         architecture: std::env::consts::ARCH.to_string(),
+    }
+}
+
+/// 启动本地应用程序（批量打开由前端循环调用该命令实现）
+///
+/// 为了避免 JS 侧 shell 插件 scope、URL 校验等限制，
+/// 这里直接在 Rust 端使用 `cmd /C start` 启动指定路径的程序。
+#[tauri::command]
+fn launch_app(path: String) -> Result<(), String> {
+    // 仅在 Windows 下使用 cmd /C start 启动程序
+    #[cfg(target_os = "windows")]
+    {
+        StdCommand::new("cmd")
+            .arg("/C")
+            .arg("start")
+            .arg("")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("failed to launch app: {}", e))?;
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err("launch_app is only implemented for Windows".to_string())
     }
 }
 
@@ -181,6 +205,7 @@ fn scrape_page(url: String, selector: String) -> ScrapeResult {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
+    .plugin(tauri_plugin_store::Builder::default().build())
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(
@@ -198,7 +223,8 @@ pub fn run() {
       get_disk_info,
       fetch_url,
       parse_html_by_selector,
-      scrape_page
+      scrape_page,
+      launch_app
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

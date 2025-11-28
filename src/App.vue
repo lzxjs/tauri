@@ -11,6 +11,7 @@ import {
   GlobalOutlined,
   SearchOutlined,
 } from "@ant-design/icons-vue";
+import AppLauncher from "./components/AppLauncher.vue";
 
 const loading = ref(true);
 const systemInfo = ref(null);
@@ -114,6 +115,11 @@ onMounted(() => {
 
       <a-layout-content class="content">
         <a-spin :spinning="loading" size="large">
+          <!-- 应用批量启动器 -->
+          <a-col :xs="24" :lg="24" style="margin-bottom: 16px;">
+            <AppLauncher />
+          </a-col>
+
           <!-- 网页爬虫卡片 -->
           <a-col :xs="24" :lg="24" style="margin-bottom: 10px;">
             <a-card title="网页爬虫" :bordered="false">

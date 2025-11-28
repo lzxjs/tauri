@@ -40,10 +40,6 @@ const fetchAllInfo = async (isInitial = false) => {
     memoryInfo.value = memory;
     diskInfo.value = disks;
 
-    // 只有首次进入页面时提示一次成功，后续定时刷新不再弹 toast
-    if (isInitial) {
-      message.success("系统信息加载成功");
-    }
   } catch (error) {
     message.error("获取系统信息失败: " + error);
     console.error(error);

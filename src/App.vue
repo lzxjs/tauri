@@ -1,6 +1,8 @@
 <script setup>
-import { computed } from "vue";
+import { computed, ref, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
+import { message } from "ant-design-vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -8,12 +10,52 @@ const router = useRouter();
 // 顶部功能菜单：launcher(批量启动器) / scraper(网页爬虫) / system(系统信息)
 const activeMenu = computed(() => route.name || "launcher");
 
+// 开机启动状态
+const autostartEnabled = ref(false);
+const autostartLoading = ref(false);
+
 // 处理菜单点击，使用 vue-router 切换路径
 const handleMenuClick = ({ key }) => {
   if (!key) return;
   if (key === route.name) return;
   router.push({ name: key }).catch(() => {});
 };
+
+// 获取开机启动状态
+const checkAutostartStatus = async () => {
+  try {
+    autostartEnabled.value = await isEnabled();
+  } catch (error) {
+    console.error("获取开机启动状态失败:", error);
+  }
+};
+
+// 切换开机启动
+const toggleAutostart = async (checked) => {
+  autostartLoading.value = true;
+  try {
+    if (checked) {
+      await enable();
+      message.success("已启用开机启动");
+    } else {
+      await disable();
+      message.success("已禁用开机启动");
+    }
+    autostartEnabled.value = checked;
+  } catch (error) {
+    console.error("切换开机启动失败:", error);
+    message.error("操作失败，请重试");
+    // 恢复原状态
+    autostartEnabled.value = !checked;
+  } finally {
+    autostartLoading.value = false;
+  }
+};
+
+// 组件挂载时检查状态
+onMounted(() => {
+  checkAutostartStatus();
+});
 </script>
 
 <template>
@@ -21,6 +63,14 @@ const handleMenuClick = ({ key }) => {
     <a-layout>
       <a-layout-header class="header">
         <h1>🍅 小茄的工具箱</h1>
+        <div class="header-actions">
+          <span class="autostart-label">开机启动</span>
+          <a-switch
+            v-model:checked="autostartEnabled"
+            :loading="autostartLoading"
+            @change="toggleAutostart"
+          />
+        </div>
       </a-layout-header>
 
       <a-layout>
@@ -50,7 +100,7 @@ const handleMenuClick = ({ key }) => {
   overflow: hidden;
 }
 
-:deep .ant-layout-sider-children {
+:deep(.ant-layout-sider-children) {
   background: #fff;
 }
 
@@ -70,6 +120,18 @@ const handleMenuClick = ({ key }) => {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.autostart-label {
+  font-size: 14px;
+  color: #666;
+  user-select: none;
 }
 
 .content {

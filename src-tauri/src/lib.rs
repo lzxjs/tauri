@@ -241,6 +241,14 @@ pub fn run() {
             .build(),
         )?;
       }
+      
+      // 初始化 autostart 插件
+      #[cfg(desktop)]
+      app.handle().plugin(tauri_plugin_autostart::init(
+        tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+        None, // 不传递额外参数
+      ))?;
+      
       Ok(())
     })
     .invoke_handler(tauri::generate_handler![

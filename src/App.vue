@@ -87,7 +87,11 @@ onMounted(() => {
         </a-layout-sider>
 
         <a-layout-content class="content">
-          <router-view />
+          <router-view v-slot="{ Component }">
+            <transition name="fade" mode="out-in">
+              <component :is="Component" :key="route.name" />
+            </transition>
+          </router-view>
         </a-layout-content>
       </a-layout>
     </a-layout>
@@ -186,5 +190,27 @@ onMounted(() => {
   font-size: 12px;
   line-height: 1.5;
   color: #333;
+}
+
+/* 路由切换动画 */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.fade-enter-from {
+  opacity: 0;
+  transform: translateX(10px);
+}
+
+.fade-leave-to {
+  opacity: 0;
+  transform: translateX(-10px);
+}
+
+.fade-enter-to,
+.fade-leave-from {
+  opacity: 1;
+  transform: translateX(0);
 }
 </style>

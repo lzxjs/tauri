@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use sysinfo::{System, Disks};
 use scraper::{Html, Selector};
 use std::process::Command as StdCommand;
+use std::path::Path;
 
 #[derive(Serialize, Deserialize)]
 struct SystemInfo {
@@ -83,6 +84,32 @@ fn launch_app(path: String) -> Result<(), String> {
     #[cfg(not(target_os = "windows"))]
     {
         Err("launch_app is only implemented for Windows".to_string())
+    }
+}
+
+/// 打开应用所在文件夹（在资源管理器中选中该文件/快捷方式）
+#[tauri::command]
+fn open_app_folder(path: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let p = Path::new(&path);
+        if !p.exists() {
+            return Err("path does not exist".to_string());
+        }
+
+        // 使用 explorer /select, PATH 高亮该文件（或快捷方式）所在的文件夹
+        StdCommand::new("explorer")
+            .arg("/select,")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("failed to open folder: {}", e))?;
+
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err("open_app_folder is only implemented for Windows".to_string())
     }
 }
 
@@ -224,7 +251,8 @@ pub fn run() {
       fetch_url,
       parse_html_by_selector,
       scrape_page,
-      launch_app
+      launch_app,
+      open_app_folder
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

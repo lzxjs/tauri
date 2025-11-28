@@ -1,9 +1,9 @@
 <script setup>
 // 应用批量启动器：负责拖拽添加快捷方式、管理列表、排序、批量调用后端命令启动程序
-import { ref, onMounted, onUnmounted, h } from 'vue';
-import { message } from 'ant-design-vue';
-import { invoke } from '@tauri-apps/api/core';
-import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { ref, onMounted, onUnmounted, h } from "vue";
+import { message } from "ant-design-vue";
+import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   RocketOutlined,
   DeleteOutlined,
@@ -13,7 +13,8 @@ import {
   ArrowDownOutlined,
   EditOutlined,
   PlusOutlined,
-} from '@ant-design/icons-vue';
+  FolderOpenOutlined,
+} from "@ant-design/icons-vue";
 import {
   apps,
   loadApps,
@@ -30,13 +31,13 @@ import {
   saveLastScene,
   loadLastScene,
   renameScene,
-} from '../composables/useAppStore';
+} from "../composables/useAppStore";
 
 const isDragging = ref(false);
 const selectedRowKeys = ref([]);
 const launching = ref(false);
 // 当前场景（默认“默认场景”，启动时从 store 恢复）
-const currentScene = ref('默认场景');
+const currentScene = ref("默认场景");
 // 当前场景下的应用列表（由 apps + currentScene 计算）
 const appsInScene = ref([]);
 // 场景选择下拉框的选项
@@ -44,45 +45,45 @@ const sceneOptions = ref([]);
 // 修改场景弹窗的状态
 const sceneModalOpen = ref(false);
 const sceneModalRecord = ref(null);
-const sceneModalValue = ref('默认场景');
+const sceneModalValue = ref("默认场景");
 // 新建场景弹窗
 const sceneCreateModalOpen = ref(false);
-const sceneCreateName = ref('');
+const sceneCreateName = ref("");
 // 重命名场景弹窗
 const sceneRenameModalOpen = ref(false);
-const sceneRenameName = ref('');
+const sceneRenameName = ref("");
 // 行排序（通过上移 / 下移按钮控制）
 let unlistenFileDrop = null;
 
 // 名称编辑状态
 const editingNameId = ref(null);
-const editingNameValue = ref('');
+const editingNameValue = ref("");
 
 // 表格列定义
 const columns = [
   {
-    title: '程序名称',
-    dataIndex: 'name',
-    key: 'name',
+    title: "程序名称",
+    dataIndex: "name",
+    key: "name",
     ellipsis: true,
   },
   {
-    title: '程序路径',
-    dataIndex: 'path',
-    key: 'path',
+    title: "程序路径",
+    dataIndex: "path",
+    key: "path",
     ellipsis: true,
   },
   {
-    title: '添加时间',
-    dataIndex: 'addedAt',
-    key: 'addedAt',
+    title: "添加时间",
+    dataIndex: "addedAt",
+    key: "addedAt",
     width: 180,
   },
   {
-    title: '操作',
-    key: 'action',
+    title: "操作",
+    key: "action",
     width: 180,
-    fixed: 'right',
+    fixed: "right",
   },
 ];
 
@@ -106,8 +107,8 @@ const handleDrop = (e) => {
 const handleFileDrop = async (paths) => {
   if (!paths || paths.length === 0) return;
 
-  console.log('拖放的文件路径:', paths);
-  console.log('当前应用列表:', apps.value);
+  console.log("拖放的文件路径:", paths);
+  console.log("当前应用列表:", apps.value);
 
   let successCount = 0;
   let failCount = 0;
@@ -116,22 +117,22 @@ const handleFileDrop = async (paths) => {
 
   for (const filePath of paths) {
     // 提取文件名
-    const fileName = filePath.split('\\').pop().split('/').pop();
+    const fileName = filePath.split("\\").pop().split("/").pop();
     // 提取文件名（不含扩展名）
-    const appName = fileName.replace(/\.(lnk|exe|app|url)$/i, '');
+    const appName = fileName.replace(/\.(lnk|exe|app|url)$/i, "");
 
     console.log(`准备添加: ${appName} - ${filePath}`);
 
     try {
-      await addApp(filePath, appName, currentScene.value || '默认场景');
+      await addApp(filePath, appName, currentScene.value || "默认场景");
       successCount++;
       console.log(`添加成功: ${appName}`);
     } catch (error) {
       console.error(`添加应用失败 [${appName}]:`, error.message);
       // 按启动路径判断是否为已存在应用
-      if (error && error.message === '该应用已存在') {
+      if (error && error.message === "该应用已存在") {
         existCount++;
-        errors.push({ name: appName, path: filePath, error: '应用已存在' });
+        errors.push({ name: appName, path: filePath, error: "应用已存在" });
       } else {
         failCount++;
         errors.push({ name: appName, path: filePath, error: error.message });
@@ -139,7 +140,7 @@ const handleFileDrop = async (paths) => {
     }
   }
 
-  console.log('添加完成后的应用列表:', apps.value);
+  console.log("添加完成后的应用列表:", apps.value);
 
   if (successCount > 0) {
     message.success(`成功添加 ${successCount} 个应用`);
@@ -148,7 +149,10 @@ const handleFileDrop = async (paths) => {
     message.warning(`${existCount} 个应用已存在，已跳过`);
   }
   if (failCount > 0) {
-    console.error('添加失败的应用详情:', errors.filter(e => e.error !== '应用已存在'));
+    console.error(
+      "添加失败的应用详情:",
+      errors.filter((e) => e.error !== "应用已存在")
+    );
     message.error(`${failCount} 个应用添加失败，请查看控制台`);
   }
   // 新增完成后刷新当前场景视图
@@ -158,12 +162,12 @@ const handleFileDrop = async (paths) => {
 // 批量打开（选中项）
 const handleLaunchSelected = async () => {
   if (selectedRowKeys.value.length === 0) {
-    message.warning('请先选择要启动的应用');
+    message.warning("请先选择要启动的应用");
     return;
   }
 
   const selectedSet = new Set(selectedRowKeys.value);
-  const target = appsInScene.value.filter(app => selectedSet.has(app.id));
+  const target = appsInScene.value.filter((app) => selectedSet.has(app.id));
   await launchApps(target);
 };
 
@@ -176,23 +180,36 @@ const handleLaunchSceneAll = async () => {
 const handleDelete = async (appId) => {
   try {
     await removeApp(appId);
-    message.success('删除成功');
+    message.success("删除成功");
     // 如果删除的应用在选中列表中，也要移除
-    selectedRowKeys.value = selectedRowKeys.value.filter(key => key !== appId);
+    selectedRowKeys.value = selectedRowKeys.value.filter(
+      (key) => key !== appId
+    );
     // 同步当前场景数据
     refreshScenesAndApps();
   } catch (error) {
-    message.error('删除失败: ' + error.message);
+    message.error("删除失败: " + error.message);
+  }
+};
+
+// 打开应用所在文件夹
+const openAppFolder = async (record) => {
+  if (!record || !record.path) return;
+  try {
+    await invoke("open_app_folder", { path: record.path });
+  } catch (error) {
+    console.error("打开文件夹失败:", error);
+    message.error("打开文件夹失败: " + (error?.message || error));
   }
 };
 
 // 删除当前场景（删除该场景下所有应用），然后切回默认场景/其他场景
 const handleDeleteScene = async () => {
-  const scene = currentScene.value || '默认场景';
+  const scene = currentScene.value || "默认场景";
 
   // 找出当前场景下的所有应用
   const appsToDelete = apps.value.filter(
-    (app) => (app.scene || '默认场景') === scene,
+    (app) => (app.scene || "默认场景") === scene
   );
 
   try {
@@ -206,12 +223,12 @@ const handleDeleteScene = async () => {
 
     // 切回默认场景或第一个可用场景
     const scenes = getScenes();
-    if (scene !== '默认场景' && scenes.includes('默认场景')) {
-      currentScene.value = '默认场景';
+    if (scene !== "默认场景" && scenes.includes("默认场景")) {
+      currentScene.value = "默认场景";
     } else if (scenes.length > 0) {
       currentScene.value = scenes[0];
     } else {
-      currentScene.value = '默认场景';
+      currentScene.value = "默认场景";
     }
 
     // 场景变更后更新 lastScene
@@ -222,8 +239,8 @@ const handleDeleteScene = async () => {
 
     message.success(`场景“${scene}”及其下的应用已删除`);
   } catch (error) {
-    console.error('删除场景失败:', error);
-    message.error('删除场景失败');
+    console.error("删除场景失败:", error);
+    message.error("删除场景失败");
   }
 };
 
@@ -238,7 +255,7 @@ const rowSelection = {
 // 批量删除（仅作用于当前场景列表中选中的 id）
 const handleBatchDelete = async () => {
   if (selectedRowKeys.value.length === 0) {
-    message.warning('请先选择要删除的应用');
+    message.warning("请先选择要删除的应用");
     return;
   }
 
@@ -249,14 +266,14 @@ const handleBatchDelete = async () => {
     // 同步当前场景数据
     refreshScenesAndApps();
   } catch (error) {
-    message.error('批量删除失败: ' + error.message);
+    message.error("批量删除失败: " + error.message);
   }
 };
 
 // 通用批量打开逻辑：接受一个应用数组，逐个调用 launch_app
 const launchApps = async (targetApps) => {
   if (!targetApps || targetApps.length === 0) {
-    message.warning('没有可打开的应用');
+    message.warning("没有可打开的应用");
     return;
   }
 
@@ -269,13 +286,13 @@ const launchApps = async (targetApps) => {
     try {
       console.log(`正在启动: ${app.name} - ${app.path}`);
       // 调用后端 Tauri 命令启动程序
-      await invoke('launch_app', { path: app.path });
+      await invoke("launch_app", { path: app.path });
 
       successCount++;
       console.log(`启动成功: ${app.name}`);
-      
+
       // 添加小延迟，避免同时启动太多程序
-      await new Promise(resolve => setTimeout(resolve, 300));
+      await new Promise((resolve) => setTimeout(resolve, 300));
     } catch (error) {
       console.error(`打开应用失败 [${app.name}]:`, error);
       errors.push({ name: app.name, error: error.message });
@@ -289,34 +306,39 @@ const launchApps = async (targetApps) => {
     message.success(`成功启动 ${successCount} 个应用`);
   }
   if (failCount > 0) {
-    console.error('启动失败的应用:', errors);
+    console.error("启动失败的应用:", errors);
     message.error(`${failCount} 个应用启动失败，请查看控制台`);
   }
 };
 
 // 行排序：通过“上移 / 下移”按钮调整当前场景内的顺序
 const moveRow = async (record, direction) => {
-  const index = appsInScene.value.findIndex(app => app.id === record.id);
+  const index = appsInScene.value.findIndex((app) => app.id === record.id);
   if (index === -1) return;
 
-  const targetIndex = direction === 'up' ? index - 1 : index + 1;
+  const targetIndex = direction === "up" ? index - 1 : index + 1;
   if (targetIndex < 0 || targetIndex >= appsInScene.value.length) return;
 
   const reordered = [...appsInScene.value];
   const [moved] = reordered.splice(index, 1);
   reordered.splice(targetIndex, 0, moved);
 
-  const sceneName = currentScene.value || '默认场景';
-  const otherApps = apps.value.filter(app => (app.scene || '默认场景') !== sceneName);
+  const sceneName = currentScene.value || "默认场景";
+  const otherApps = apps.value.filter(
+    (app) => (app.scene || "默认场景") !== sceneName
+  );
   apps.value = [...otherApps, ...reordered];
   appsInScene.value = reordered;
 
   try {
     await saveApps();
-    console.log('排序已保存:', reordered.map(a => a.name));
+    console.log(
+      "排序已保存:",
+      reordered.map((a) => a.name)
+    );
   } catch (error) {
-    console.error('保存排序失败:', error);
-    message.error('保存排序失败');
+    console.error("保存排序失败:", error);
+    message.error("保存排序失败");
   }
 };
 
@@ -325,21 +347,24 @@ const refreshScenesAndApps = () => {
   // 同步场景列表
   const baseScenes = getScenes();
   const scenesSet = new Set(baseScenes);
-  const current = currentScene.value || '默认场景';
+  const current = currentScene.value || "默认场景";
   // 确保当前场景始终在列表中，即使还没有应用
   scenesSet.add(current);
 
-  sceneOptions.value = Array.from(scenesSet).map(name => ({ label: name, value: name }));
+  sceneOptions.value = Array.from(scenesSet).map((name) => ({
+    label: name,
+    value: name,
+  }));
 
   appsInScene.value = getAppsByScene(current);
 };
 
 // 切换场景
 const handleSceneChange = (value) => {
-  currentScene.value = value || '默认场景';
+  currentScene.value = value || "默认场景";
   // 记住最新场景
   saveLastScene(currentScene.value).catch((error) => {
-    console.error('保存上次场景失败:', error);
+    console.error("保存上次场景失败:", error);
   });
   appsInScene.value = getAppsByScene(currentScene.value);
   // 切换场景时清空勾选
@@ -349,7 +374,7 @@ const handleSceneChange = (value) => {
 // 打开修改场景弹窗
 const openSceneModal = (record) => {
   sceneModalRecord.value = record;
-  sceneModalValue.value = record.scene || currentScene.value || '默认场景';
+  sceneModalValue.value = record.scene || currentScene.value || "默认场景";
   sceneModalOpen.value = true;
 };
 
@@ -360,13 +385,13 @@ const handleSceneModalOk = async () => {
     return;
   }
 
-  const newScene = (sceneModalValue.value || '').trim() || '默认场景';
+  const newScene = (sceneModalValue.value || "").trim() || "默认场景";
 
   try {
     // 检查目标场景中是否已有同路径应用
     const targetPath = sceneModalRecord.value.path;
     const existsInTargetScene = apps.value.some((app) => {
-      const appScene = app.scene || '默认场景';
+      const appScene = app.scene || "默认场景";
       return (
         app.id !== sceneModalRecord.value.id &&
         app.path === targetPath &&
@@ -383,10 +408,10 @@ const handleSceneModalOk = async () => {
     sceneModalOpen.value = false;
     sceneModalRecord.value = null;
     refreshScenesAndApps();
-    message.success('场景已更新');
+    message.success("场景已更新");
   } catch (error) {
-    console.error('更新场景失败:', error);
-    message.error('更新场景失败');
+    console.error("更新场景失败:", error);
+    message.error("更新场景失败");
   }
 };
 
@@ -398,7 +423,7 @@ const handleSceneModalCancel = () => {
 
 // 打开新建场景弹窗
 const openCreateSceneModal = () => {
-  sceneCreateName.value = '';
+  sceneCreateName.value = "";
   sceneCreateModalOpen.value = true;
 };
 
@@ -406,7 +431,7 @@ const openCreateSceneModal = () => {
 const handleSceneCreateOk = () => {
   const name = sceneCreateName.value.trim();
   if (!name) {
-    message.warning('场景名称不能为空');
+    message.warning("场景名称不能为空");
     return;
   }
 
@@ -426,8 +451,8 @@ const handleSceneCreateOk = () => {
       message.success(`已切换到新场景：${name}`);
     })
     .catch((error) => {
-      console.error('创建场景失败:', error);
-      message.error('创建场景失败');
+      console.error("创建场景失败:", error);
+      message.error("创建场景失败");
     });
 };
 
@@ -438,14 +463,14 @@ const handleSceneCreateCancel = () => {
 
 // 打开重命名场景弹窗
 const openRenameSceneModal = () => {
-  sceneRenameName.value = currentScene.value || '默认场景';
+  sceneRenameName.value = currentScene.value || "默认场景";
   sceneRenameModalOpen.value = true;
 };
 
 // 确认重命名场景
 const handleSceneRenameOk = async () => {
-  const oldName = currentScene.value || '默认场景';
-  const newName = sceneRenameName.value.trim() || '默认场景';
+  const oldName = currentScene.value || "默认场景";
+  const newName = sceneRenameName.value.trim() || "默认场景";
 
   if (newName === oldName) {
     sceneRenameModalOpen.value = false;
@@ -460,8 +485,8 @@ const handleSceneRenameOk = async () => {
     selectedRowKeys.value = [];
     message.success(`场景已重命名为：“${newName}”`);
   } catch (error) {
-    console.error('重命名场景失败:', error);
-    message.error('重命名场景失败');
+    console.error("重命名场景失败:", error);
+    message.error("重命名场景失败");
   } finally {
     sceneRenameModalOpen.value = false;
   }
@@ -475,7 +500,7 @@ const handleSceneRenameCancel = () => {
 // 开始编辑名称
 const startEditName = (record) => {
   editingNameId.value = record.id;
-  editingNameValue.value = record.name || '';
+  editingNameValue.value = record.name || "";
 };
 
 // 名称编辑完成（失焦或回车）
@@ -489,14 +514,14 @@ const finishEditName = async (record) => {
     await updateAppName(record.id, newName);
     // 同步内存中的数据
     record.name = newName;
-    const index = apps.value.findIndex(app => app.id === record.id);
+    const index = apps.value.findIndex((app) => app.id === record.id);
     if (index !== -1) {
       apps.value[index].name = newName;
     }
-    message.success('名称已更新');
+    message.success("名称已更新");
   } catch (error) {
-    console.error('更新名称失败:', error);
-    message.error('更新名称失败');
+    console.error("更新名称失败:", error);
+    message.error("更新名称失败");
   }
 };
 
@@ -511,17 +536,17 @@ onMounted(async () => {
     // 监听文件拖放事件
     const webview = getCurrentWebviewWindow();
     unlistenFileDrop = await webview.onDragDropEvent((event) => {
-      if (event.payload.type === 'drop') {
+      if (event.payload.type === "drop") {
         isDragging.value = false;
         handleFileDrop(event.payload.paths);
-      } else if (event.payload.type === 'over') {
+      } else if (event.payload.type === "over") {
         isDragging.value = true;
-      } else if (event.payload.type === 'leave') {
+      } else if (event.payload.type === "leave") {
         isDragging.value = false;
       }
     });
   } catch (error) {
-    message.error('初始化失败: ' + error.message);
+    message.error("初始化失败: " + error.message);
     console.error(error);
   }
 });
@@ -532,7 +557,6 @@ onUnmounted(() => {
     unlistenFileDrop();
   }
 });
-
 </script>
 
 <template>
@@ -602,7 +626,7 @@ onUnmounted(() => {
             :loading="launching"
             :disabled="selectedRowKeys.length === 0"
           >
-            {{ launching ? '启动中...' : '启动选中' }}
+            {{ launching ? "启动中..." : "启动选中" }}
           </a-button>
           <a-button
             type="default"
@@ -611,7 +635,7 @@ onUnmounted(() => {
             :loading="launching"
             :disabled="appsInScene.length === 0"
           >
-            {{ launching ? '启动中...' : '本场景全部' }}
+            {{ launching ? "启动中..." : "本场景全部" }}
           </a-button>
         </a-space>
       </template>
@@ -639,7 +663,7 @@ onUnmounted(() => {
         <a-table
           :columns="columns"
           :data-source="appsInScene"
-          :row-key="record => record.id"
+          :row-key="(record) => record.id"
           :row-selection="rowSelection"
           :pagination="apps.length > 10 ? { pageSize: 10 } : false"
           :scroll="{ x: 800 }"
@@ -664,9 +688,18 @@ onUnmounted(() => {
               </div>
             </template>
             <template v-else-if="column.key === 'addedAt'">
-              <span>{{ new Date(record.addedAt).toLocaleString('zh-CN') }}</span>
+              <span>{{
+                new Date(record.addedAt).toLocaleString("zh-CN")
+              }}</span>
             </template>
             <template v-else-if="column.key === 'action'">
+              <a-button
+                type="link"
+                size="small"
+                :icon="h(RocketOutlined)"
+                title="启动"
+                @click="launchApps([record])"
+              />
               <a-button
                 type="link"
                 size="small"
@@ -681,12 +714,20 @@ onUnmounted(() => {
                 title="下移"
                 @click="() => moveRow(record, 'down')"
               />
+
               <a-button
                 type="link"
                 size="small"
-                :icon="h(RocketOutlined)"
-                title="启动"
-                @click="launchApps([record])"
+                :icon="h(FolderOpenOutlined)"
+                title="打开所在文件夹"
+                @click="() => openAppFolder(record)"
+              />
+              <a-button
+                type="link"
+                size="small"
+                :icon="h(EditOutlined)"
+                title="改场景"
+                @click="openSceneModal(record)"
               />
               <a-popconfirm
                 title="确认删除该应用？"
@@ -702,13 +743,6 @@ onUnmounted(() => {
                   title="删除"
                 />
               </a-popconfirm>
-              <a-button
-                type="link"
-                size="small"
-                :icon="h(EditOutlined)"
-                title="改场景"
-                @click="openSceneModal(record)"
-              />
             </template>
           </template>
 

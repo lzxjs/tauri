@@ -77,6 +77,7 @@ const handleMenuClick = ({ key }) => {
   height: calc(100vh - 108px);
   /* max-height:  calc(100vh - 64px); */
   overflow-y: auto;
+  overflow-x: hidden;
   background: #fff;
 }
 

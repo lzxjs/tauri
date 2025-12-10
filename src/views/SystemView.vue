@@ -2,7 +2,6 @@
 import { ref, onMounted, onUnmounted, computed } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { message } from "ant-design-vue";
-import { Store } from "@tauri-apps/plugin-store";
 import {
   DatabaseOutlined,
   HddOutlined,
@@ -11,6 +10,10 @@ import {
   ArrowUpOutlined,
   ArrowDownOutlined,
 } from "@ant-design/icons-vue";
+import {
+  currentNetworkSpeed,
+  getTrafficByDate
+} from "../services/networkTrafficService";
 
 const loading = ref(true);
 const systemInfo = ref(null);
@@ -19,34 +22,14 @@ const memoryInfo = ref(null);
 const diskInfo = ref([]);
 const networkInfo = ref([]);
 
-// 上一次的网络数据，用于计算速度
-const lastNetworkData = ref(null);
-
-// 当前网络速度（字节/秒）
-const currentNetworkSpeed = ref({ upload: 0, download: 0 });
-
-// 七日网络流量统计（按日期存储每日的上传和下载总量）
-const sevenDayTraffic = ref({});
-
 // 当前选中的日期索引（0=今天，1=昨天，...，6=6天前）
 const selectedDayIndex = ref(0);
 
-// 创建 Store 实例用于持久化存储七日流量数据
-const trafficStore = new Store("traffic-store.json");
-
 let timer = null;
-
-// 获取指定天数前的日期字符串
-const getDateString = (daysAgo) => {
-  const date = new Date();
-  date.setDate(date.getDate() - daysAgo);
-  return date.toDateString();
-};
 
 // 获取当前选中日期的流量数据
 const currentDayTraffic = computed(() => {
-  const dateKey = getDateString(selectedDayIndex.value);
-  return sevenDayTraffic.value[dateKey] || { upload: 0, download: 0 };
+  return getTrafficByDate(selectedDayIndex.value);
 });
 
 // 获取日期标签（今天、昨天、或具体日期）
@@ -74,45 +57,7 @@ const formatSpeed = (bytesPerSecond) => {
   return (bytesPerSecond / Math.pow(k, i)).toFixed(2) + " " + sizes[i];
 };
 
-// 从 Tauri Store 加载七日流量数据
-const loadSevenDayTraffic = async () => {
-  try {
-    await trafficStore.load();
-    const stored = await trafficStore.get("seven_day_traffic");
-    if (stored) {
-      const data = stored;
-
-      // 清理超过7天的数据
-      const cleanedData = {};
-      const now = new Date();
-
-      Object.keys(data).forEach(dateKey => {
-        const date = new Date(dateKey);
-        const daysDiff = Math.floor((now - date) / (1000 * 60 * 60 * 24));
-
-        if (daysDiff < 7) {
-          cleanedData[dateKey] = data[dateKey];
-        }
-      });
-
-      sevenDayTraffic.value = cleanedData;
-    }
-  } catch (error) {
-    console.error("加载七日流量数据失败:", error);
-  }
-};
-
-// 保存七日流量数据到 Tauri Store
-const saveSevenDayTraffic = async () => {
-  try {
-    await trafficStore.set("seven_day_traffic", sevenDayTraffic.value);
-    await trafficStore.save();
-  } catch (error) {
-    console.error("保存七日流量数据失败:", error);
-  }
-};
-
-const fetchAllInfo = async (isInitial = false, skipTrafficAccumulation = false) => {
+const fetchAllInfo = async (isInitial = false) => {
   if (isInitial) {
     loading.value = true;
   }
@@ -131,36 +76,6 @@ const fetchAllInfo = async (isInitial = false, skipTrafficAccumulation = false) 
     diskInfo.value = disks;
     networkInfo.value = network;
 
-    // 计算网络速度和累计流量
-    if (lastNetworkData.value && network.length > 0 && !skipTrafficAccumulation) {
-      let totalUpload = 0;
-      let totalDownload = 0;
-
-      network.forEach((iface, index) => {
-        const lastIface = lastNetworkData.value[index];
-        if (lastIface && lastIface.interface_name === iface.interface_name) {
-          totalDownload += iface.received_bytes - lastIface.received_bytes;
-          totalUpload += iface.transmitted_bytes - lastIface.transmitted_bytes;
-        }
-      });
-
-      currentNetworkSpeed.value = {
-        upload: totalUpload,
-        download: totalDownload,
-      };
-
-      // 累加到今日流量统计
-      const today = getDateString(0);
-      if (!sevenDayTraffic.value[today]) {
-        sevenDayTraffic.value[today] = { upload: 0, download: 0 };
-      }
-      sevenDayTraffic.value[today].upload += totalUpload;
-      sevenDayTraffic.value[today].download += totalDownload;
-      saveSevenDayTraffic();
-    }
-
-    lastNetworkData.value = network;
-
   } catch (error) {
     message.error("获取系统信息失败: " + error);
     console.error(error);
@@ -172,11 +87,9 @@ const fetchAllInfo = async (isInitial = false, skipTrafficAccumulation = false) 
   }
 };
 
-onMounted(async () => {
-  // 加载七日流量数据
-  await loadSevenDayTraffic();
-  // 首次进入视图时加载一次，但跳过流量累加（仅作为基准）
-  await fetchAllInfo(true, true);
+onMounted(() => {
+  // 首次加载系统信息
+  fetchAllInfo(true);
   // 每秒刷新一次系统信息
   timer = setInterval(() => fetchAllInfo(false), 1000);
 });

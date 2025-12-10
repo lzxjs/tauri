@@ -1,8 +1,9 @@
 <script setup>
-import { computed, ref, onMounted, watch } from "vue";
+import { computed, ref, onMounted, onUnmounted, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { message } from "ant-design-vue";
+import { startNetworkTrafficService, stopNetworkTrafficService } from "./services/networkTrafficService";
 
 const route = useRoute();
 const router = useRouter();
@@ -74,6 +75,14 @@ onMounted(() => {
       console.warn("恢复上次路由失败:", err);
     });
   }
+
+  // 启动全局网络流量统计服务
+  startNetworkTrafficService();
+});
+
+// 组件卸载时停止服务
+onUnmounted(() => {
+  stopNetworkTrafficService();
 });
 </script>
 
@@ -97,23 +106,22 @@ onMounted(() => {
             mode="inline"
             @click="handleMenuClick"
             class="custom-menu"
-          >
+          >            <a-menu-item key="system">
+              <span class="menu-icon-wrapper">🖥️</span>
+              <span class="menu-text">系统监控</span>
+            </a-menu-item>
             <a-menu-item key="launcher">
               <span class="menu-icon-wrapper">🚀</span>
               <span class="menu-text">应用启动</span>
             </a-menu-item>
-            <a-menu-item key="system">
-              <span class="menu-icon-wrapper">🖥️</span>
-              <span class="menu-text">系统监控</span>
-            </a-menu-item>
-            <a-menu-item key="scraper">
-              <span class="menu-icon-wrapper">🕷️</span>
-              <span class="menu-text">网页爬虫</span>
-            </a-menu-item>
-            <a-menu-item key="recorder">
+           <a-menu-item key="recorder">
               <span class="menu-icon-wrapper">⏺️</span>
               <span class="menu-text">动作录制</span>
             </a-menu-item>
+            <!-- <a-menu-item key="scraper">
+              <span class="menu-icon-wrapper">🕷️</span>
+              <span class="menu-text">网页爬虫</span>
+            </a-menu-item> -->
           </a-menu>
         </div>
 

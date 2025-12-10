@@ -797,9 +797,9 @@ onUnmounted(() => {
       class="instruction-modal"
     >
       <div class="instruction-content">
-        <div class="key-icon">Ctrl + ESC</div>
         <h3>快捷键提示</h3>
-        <p>无论在录制还是回放过程中</p>
+        <div class="key-icon">Ctrl + ESC</div>
+        <p>无论在 <strong>录制</strong> 还是 <strong>回放</strong> 过程中</p>
         <p>按下 <strong>Ctrl + ESC</strong> 即可随时停止</p>
         <a-button type="primary" shape="round" block @click="showInstructionModal = false" style="margin-top: 20px">
           我已知晓

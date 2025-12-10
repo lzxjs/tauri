@@ -2,7 +2,16 @@
   "permissions": {
     "allow": [
       "Bash(dir:*)",
-      "Bash(npm run tauri:dev)"
+      "Bash(npm run tauri:dev)",
+      "Bash(timeout /t 10 /nobreak)",
+      "Bash(exit 0)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(taskkill:*)",
+      "Bash(cmd /c taskkill /F /PID 17220)",
+      "Bash(tasklist:*)",
+      "Bash(powershell -Command:*)",
+      "Bash(timeout /t 15 /nobreak)"
     ]
   }
 }

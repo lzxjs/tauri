@@ -18,7 +18,9 @@ import {
   CheckOutlined,
   CloseOutlined,
   VideoCameraOutlined,
-  EllipsisOutlined
+  EllipsisOutlined,
+  ReloadOutlined,
+  ThunderboltOutlined
 } from '@ant-design/icons-vue'
 
 // Store 实例
@@ -34,12 +36,12 @@ let statusTimer = null
 
 // 倒计时配置
 const countdownEnabled = ref(true)
-const countdownSeconds = ref(3)
+const countdownSeconds = ref(5)
 const isCountingDown = ref(false)
 const currentCountdown = ref(0)
 
 // 执行延迟配置
-const executeDelayEnabled = ref(false)
+const executeDelayEnabled = ref(true)
 const executeDelaySeconds = ref(3)
 const isExecuteDelaying = ref(false)
 const currentExecuteDelay = ref(0)
@@ -47,6 +49,9 @@ const currentExecuteDelay = ref(0)
 // 回放配置
 const repeatCount = ref(1)
 const isInfinite = ref(false)
+const playbackSpeed = ref(1)
+const skipIdleEnabled = ref(false)
+const maxIdleSeconds = ref(1)
 
 // 录制会话管理
 const recordingSessions = ref([])
@@ -61,6 +66,20 @@ const columns = [
   { title: '详情', dataIndex: 'details', key: 'details' },
   { title: '时间戳 (ms)', dataIndex: 'timestamp', key: 'timestamp', width: 150 },
 ]
+
+// 重置设置
+const resetSettings = () => {
+  countdownEnabled.value = true
+  countdownSeconds.value = 5
+  executeDelayEnabled.value = true
+  executeDelaySeconds.value = 3
+  repeatCount.value = 1
+  isInfinite.value = false
+  playbackSpeed.value = 1
+  skipIdleEnabled.value = false
+  maxIdleSeconds.value = 1
+  message.success('设置已恢复默认')
+}
 
 // 倒计时功能
 const startCountdown = () => {
@@ -186,7 +205,40 @@ const playSession = async (session) => {
       await startExecuteDelay()
     }
 
-    await invoke('set_recorded_events', { events: session.events })
+    // 克隆事件数据以进行处理（不影响原数据）
+    let events = JSON.parse(JSON.stringify(session.events))
+    
+    // 处理回放速度和跳过空闲
+    if (events.length > 0) {
+      // 确保按时间排序
+      events.sort((a, b) => a.timestamp - b.timestamp)
+      
+      const startTime = events[0].timestamp
+      let currentTimestamp = startTime
+      let previousOriginalTimestamp = startTime
+      
+      for (let i = 0; i < events.length; i++) {
+        const originalTimestamp = events[i].timestamp
+        let delta = originalTimestamp - previousOriginalTimestamp
+        
+        // 应用跳过空闲
+        if (skipIdleEnabled.value && delta > maxIdleSeconds.value * 1000) {
+          delta = maxIdleSeconds.value * 1000
+        }
+        
+        // 应用回放速度
+        if (playbackSpeed.value !== 1) {
+          delta = delta / playbackSpeed.value
+        }
+        
+        currentTimestamp += delta
+        events[i].timestamp = Math.round(currentTimestamp)
+        
+        previousOriginalTimestamp = originalTimestamp
+      }
+    }
+
+    await invoke('set_recorded_events', { events: events })
 
     const count = isInfinite.value ? 0 : repeatCount.value
     await invoke('play_record', { repeatCount: count })
@@ -390,6 +442,24 @@ watch(executeDelaySeconds, async (newValue) => {
   }
 })
 
+watch(playbackSpeed, async (newValue) => {
+  if (settingsStore) {
+    await settingsStore.set('recorder_playbackSpeed', newValue)
+  }
+})
+
+watch(skipIdleEnabled, async (newValue) => {
+  if (settingsStore) {
+    await settingsStore.set('recorder_skipIdleEnabled', newValue)
+  }
+})
+
+watch(maxIdleSeconds, async (newValue) => {
+  if (settingsStore) {
+    await settingsStore.set('recorder_maxIdleSeconds', newValue)
+  }
+})
+
 // 监听会话列表变化，自动保存到 store
 watch(recordingSessions, async (newValue) => {
   if (sessionsStore) {
@@ -397,6 +467,7 @@ watch(recordingSessions, async (newValue) => {
   }
 }, { deep: true })
 
+const showInstructionModal = ref(false)
 onMounted(async () => {
   try {
     settingsStore = await Store.load('settings.json', { autoSave: true })
@@ -405,11 +476,17 @@ onMounted(async () => {
     const savedCountdownSeconds = await settingsStore.get('recorder_countdownSeconds')
     const savedExecuteDelayEnabled = await settingsStore.get('recorder_executeDelayEnabled')
     const savedExecuteDelaySeconds = await settingsStore.get('recorder_executeDelaySeconds')
+    const savedPlaybackSpeed = await settingsStore.get('recorder_playbackSpeed')
+    const savedSkipIdleEnabled = await settingsStore.get('recorder_skipIdleEnabled')
+    const savedMaxIdleSeconds = await settingsStore.get('recorder_maxIdleSeconds')
 
     if (savedCountdownEnabled !== null) countdownEnabled.value = savedCountdownEnabled
     if (savedCountdownSeconds !== null) countdownSeconds.value = savedCountdownSeconds
     if (savedExecuteDelayEnabled !== null) executeDelayEnabled.value = savedExecuteDelayEnabled
     if (savedExecuteDelaySeconds !== null) executeDelaySeconds.value = savedExecuteDelaySeconds
+    if (savedPlaybackSpeed !== null) playbackSpeed.value = savedPlaybackSpeed
+    if (savedSkipIdleEnabled !== null) skipIdleEnabled.value = savedSkipIdleEnabled
+    if (savedMaxIdleSeconds !== null) maxIdleSeconds.value = savedMaxIdleSeconds
 
     sessionsStore = await Store.load('recorder_sessions.json', { autoSave: true })
 
@@ -421,6 +498,13 @@ onMounted(async () => {
     console.error('初始化 store 失败:', error)
     message.error('加载配置失败')
   }
+  showInstructionModal.value = true
+
+  // 检查是否显示首次提示
+  // const hasSeenInstruction = localStorage.getItem('recorder_instruction_seen')
+  // if (!hasSeenInstruction) {
+  //   showInstructionModal.value = true
+  // }
 
   statusTimer = setInterval(updateStatus, 1000)
 })
@@ -437,6 +521,17 @@ onUnmounted(() => {
 
 <template>
   <div class="recorder-container">
+    <!-- 顶部标题栏 -->
+    <div class="page-header">
+      <div class="header-title">
+        <VideoCameraOutlined /> 录制器
+      </div>
+      <a-button type="text" @click="resetSettings">
+        <template #icon><ReloadOutlined /></template>
+        恢复默认设置
+      </a-button>
+    </div>
+
     <!-- 顶部控制区 -->
     <a-row :gutter="[16, 16]">
       <!-- 录制控制 -->
@@ -548,6 +643,35 @@ onUnmounted(() => {
 
             <!-- 操作区 -->
             <div class="action-area">
+              <!-- 新增配置：速度与空闲 -->
+              <div class="config-group">
+                <div class="config-row">
+                   <ThunderboltOutlined style="color: #faad14; margin-right: 4px"/>
+                   <a-select v-model:value="playbackSpeed" size="small" style="width: 70px" :disabled="isRecording || isPlaying" :options="[
+                      { value: 0.5, label: '0.5x' },
+                      { value: 1, label: '1.0x' },
+                      { value: 2, label: '2.0x' },
+                      { value: 4, label: '4.0x' },
+                      { value: 8, label: '8.0x' }
+                   ]" />
+                </div>
+                <div class="config-row">
+                   <a-checkbox v-model:checked="skipIdleEnabled" :disabled="isRecording || isPlaying">
+                    <HourglassOutlined /> 跳过空闲
+                  </a-checkbox>
+                  <a-input-number
+                    v-model:value="maxIdleSeconds"
+                    :min="0.1"
+                    :max="10"
+                    :step="0.1"
+                    size="small"
+                    style="width: 50px"
+                    :disabled="!skipIdleEnabled || isRecording || isPlaying"
+                  />
+                  <span class="unit">s</span>
+                </div>
+              </div>
+
               <div class="config-group">
                 <div class="config-row">
                   <a-checkbox v-model:checked="executeDelayEnabled" :disabled="isRecording || isPlaying">
@@ -735,10 +859,44 @@ onUnmounted(() => {
         </transition-group>
       </div>
     </a-card>
+
+    <!-- 首次使用提示弹窗 -->
+    <a-modal
+      v-model:open="showInstructionModal"
+      title="使用提示"
+      :closable="false"
+      :maskClosable="false"
+      :keyboard="false"
+    >
+      <p>录制过程中按 <strong>Ctrl+ESC</strong> 停止录制</p>
+      <p>回放过程中按 <strong>Ctrl+ESC</strong> 停止回放</p>
+      <template #footer>
+        <a-button type="primary" @click="showInstructionModal = false">确定</a-button>
+      </template>
+    </a-modal>
   </div>
 </template>
 
 <style scoped>
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  background: #fff;
+  padding: 12px 24px;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+
+.header-title {
+  font-size: 18px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .recorder-container {
   padding-bottom: 24px;
 }
@@ -761,7 +919,8 @@ onUnmounted(() => {
 .control-content {
   display: flex;
   flex-direction: column;
-  height: 220px; /* 固定高度以保持对齐 */
+  height: auto;
+  min-height: 220px;
 }
 
 .status-display-area {
@@ -774,6 +933,7 @@ onUnmounted(() => {
   margin-bottom: 16px;
   position: relative;
   overflow: hidden;
+  min-height: 120px;
 }
 
 .status-box {
@@ -833,17 +993,17 @@ onUnmounted(() => {
 }
 
 .action-area {
-  height: 80px;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
+  gap: 8px;
 }
 
 .config-row {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 12px;
+  margin-bottom: 4px;
   gap: 8px;
 }
 .config-group {

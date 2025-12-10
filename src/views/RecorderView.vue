@@ -15,7 +15,8 @@ import {
   EditOutlined,
   CheckOutlined,
   CloseOutlined,
-  VideoCameraOutlined
+  VideoCameraOutlined,
+  EllipsisOutlined
 } from '@ant-design/icons-vue'
 
 // Store 实例
@@ -416,272 +417,302 @@ onUnmounted(() => {
 
 <template>
   <div class="recorder-container">
-    <!-- 录制控制区 -->
-    <a-row :gutter="16">
-      <a-col :span="12">
-        <a-card title="录制控制" class="control-card">
-          <template #extra>
-            <VideoCameraOutlined style="font-size: 18px; color: #1890ff" />
+    <!-- 顶部控制区 -->
+    <a-row :gutter="[16, 16]">
+      <!-- 录制控制 -->
+      <a-col :xs="24" :lg="12">
+        <a-card :bordered="false" class="control-card hover-card">
+          <template #title>
+            <div class="card-title">
+              <VideoCameraOutlined style="color: #ff4d4f" />
+              <span>录制控制</span>
+            </div>
           </template>
-          <a-space direction="vertical" size="middle" style="width: 100%">
-            <!-- 倒计时配置 -->
-            <div class="config-row">
-              <a-checkbox
-                v-model:checked="countdownEnabled"
-                :disabled="isRecording || isPlaying"
-              >
-                启用倒计时
-              </a-checkbox>
-              <a-input-number
-                v-model:value="countdownSeconds"
-                :min="1"
-                :max="10"
-                :disabled="!countdownEnabled || isRecording || isPlaying"
-                style="width: 80px; margin-left: 12px"
-              />
-              <span style="margin-left: 8px">秒</span>
+          
+          <div class="control-content">
+            <!-- 状态显示区 -->
+            <div class="status-display-area">
+              <div v-if="isCountingDown" class="status-box countdown-box">
+                <div class="status-value">{{ currentCountdown }}</div>
+                <div class="status-label">准备开始...</div>
+              </div>
+              
+              <div v-else-if="isRecording" class="status-box recording-box">
+                <div class="pulse-dot"></div>
+                <div class="status-value time-font">{{ formatTime(recordingTime) }}</div>
+                <div class="status-label">录制中 (ESC 停止)</div>
+              </div>
+
+              <div v-else class="status-box idle-box">
+                <div class="status-icon"><VideoCameraOutlined /></div>
+                <div class="status-label">准备就绪</div>
+              </div>
             </div>
 
-            <!-- 倒计时显示 -->
-            <div v-if="isCountingDown" class="countdown-display">
-              <div class="countdown-number">{{ currentCountdown }}</div>
-              <div class="countdown-text">准备录制...</div>
+            <!-- 操作区 -->
+            <div class="action-area">
+              <div class="config-row">
+                <a-checkbox v-model:checked="countdownEnabled" :disabled="isRecording || isPlaying">
+                  倒计时
+                </a-checkbox>
+                <a-input-number
+                  v-model:value="countdownSeconds"
+                  :min="1"
+                  :max="10"
+                  size="small"
+                  style="width: 60px"
+                  :disabled="!countdownEnabled || isRecording || isPlaying"
+                />
+                <span class="unit">秒</span>
+              </div>
+
+              <div class="main-btn">
+                <a-button
+                  v-if="!isRecording"
+                  type="primary"
+                  danger
+                  size="large"
+                  block
+                  shape="round"
+                  @click="startRecording"
+                  :disabled="isPlaying || isCountingDown"
+                >
+                  <template #icon><PlayCircleOutlined /></template>
+                  开始录制
+                </a-button>
+                <a-button
+                  v-else
+                  size="large"
+                  block
+                  shape="round"
+                  class="stop-btn"
+                  @click="stopRecording"
+                >
+                  <template #icon><StopOutlined /></template>
+                  停止录制
+                </a-button>
+              </div>
             </div>
-
-            <!-- 录制中显示 -->
-            <div v-if="isRecording" class="recording-indicator">
-              <a-badge status="processing" text="录制中" />
-              <span class="recording-time">{{ formatTime(recordingTime) }}</span>
-            </div>
-
-            <a-button
-              v-if="!isRecording && !isCountingDown"
-              type="primary"
-              size="large"
-              block
-              @click="startRecording"
-              :disabled="isPlaying"
-            >
-              <template #icon><PlayCircleOutlined /></template>
-              开始录制
-            </a-button>
-
-            <a-button
-              v-if="isRecording"
-              danger
-              size="large"
-              block
-              @click="stopRecording"
-            >
-              <template #icon><StopOutlined /></template>
-              停止录制
-            </a-button>
-
-            <a-alert
-              message="提示：录制时按 ESC 键可立即停止"
-              type="info"
-              show-icon
-            />
-          </a-space>
+          </div>
         </a-card>
       </a-col>
 
-      <a-col :span="12">
-        <a-card title="回放控制" class="control-card">
-          <template #extra>
-            <PlayCircleOutlined style="font-size: 18px; color: #52c41a" />
+      <!-- 回放控制 -->
+      <a-col :xs="24" :lg="12">
+        <a-card :bordered="false" class="control-card hover-card">
+          <template #title>
+            <div class="card-title">
+              <PlayCircleOutlined style="color: #52c41a" />
+              <span>回放配置</span>
+            </div>
           </template>
-          <a-space direction="vertical" size="middle" style="width: 100%">
-            <!-- 执行延迟配置 -->
-            <div class="config-row">
-              <a-checkbox
-                v-model:checked="executeDelayEnabled"
-                :disabled="isRecording || isPlaying || isExecuteDelaying"
-              >
-                启用执行延迟
-              </a-checkbox>
-              <a-input-number
-                v-model:value="executeDelaySeconds"
-                :min="1"
-                :max="10"
-                :disabled="!executeDelayEnabled || isRecording || isPlaying || isExecuteDelaying"
-                style="width: 80px; margin-left: 12px"
-              />
-              <span style="margin-left: 8px">秒</span>
+
+          <div class="control-content">
+             <!-- 状态显示区 -->
+             <div class="status-display-area">
+              <div v-if="isExecuteDelaying" class="status-box delay-box">
+                <div class="status-value">{{ currentExecuteDelay }}</div>
+                <div class="status-label">等待执行...</div>
+              </div>
+              
+              <div v-else-if="isPlaying" class="status-box playing-box">
+                <a-spin size="large" />
+                <div class="status-label" style="margin-top: 12px">正在回放 (ESC 停止)</div>
+              </div>
+
+              <div v-else class="status-box idle-box">
+                <div class="status-icon"><PlayCircleOutlined /></div>
+                <div class="status-label">等待指令</div>
+              </div>
             </div>
 
-            <!-- 执行延迟倒计时显示 -->
-            <div v-if="isExecuteDelaying" class="countdown-display execute-delay">
-              <div class="countdown-number">{{ currentExecuteDelay }}</div>
-              <div class="countdown-text">准备执行...</div>
+            <!-- 操作区 -->
+            <div class="action-area">
+              <div class="config-group">
+                <div class="config-row">
+                  <a-checkbox v-model:checked="executeDelayEnabled" :disabled="isRecording || isPlaying">
+                    延迟启动
+                  </a-checkbox>
+                  <a-input-number
+                    v-model:value="executeDelaySeconds"
+                    :min="1"
+                    :max="10"
+                    size="small"
+                    style="width: 60px"
+                    :disabled="!executeDelayEnabled || isRecording || isPlaying"
+                  />
+                  <span class="unit">秒</span>
+                </div>
+                <div class="config-row">
+                   <span class="label">循环:</span>
+                   <a-input-number
+                    v-model:value="repeatCount"
+                    :min="1"
+                    :max="999"
+                    size="small"
+                    style="width: 60px"
+                    :disabled="isInfinite || isRecording || isPlaying"
+                  />
+                  <a-checkbox
+                    v-model:checked="isInfinite"
+                    style="margin-left: 8px"
+                    :disabled="isRecording || isPlaying"
+                  >
+                    无限
+                  </a-checkbox>
+                </div>
+              </div>
+
+              <div class="main-btn">
+                 <a-button
+                  v-if="isPlaying"
+                  danger
+                  size="large"
+                  block
+                  shape="round"
+                  @click="stopPlaying"
+                >
+                  <template #icon><PauseCircleOutlined /></template>
+                  停止回放
+                </a-button>
+                <div v-else class="playback-hint">
+                  请在下方列表中选择一个录制进行回放
+                </div>
+              </div>
             </div>
-
-            <div class="config-row">
-              <span class="label">执行次数：</span>
-              <a-input-number
-                v-model:value="repeatCount"
-                :min="1"
-                :max="999"
-                :disabled="isInfinite || isRecording || isPlaying"
-                style="width: 100px"
-              />
-              <a-checkbox
-                v-model:checked="isInfinite"
-                :disabled="isRecording || isPlaying"
-                style="margin-left: 16px"
-              >
-                无限循环
-              </a-checkbox>
-            </div>
-
-            <div v-if="isPlaying" class="playing-indicator">
-              <a-badge status="processing" text="回放中" />
-            </div>
-
-            <a-button
-              v-if="isPlaying"
-              danger
-              size="large"
-              block
-              @click="stopPlaying"
-            >
-              <template #icon><PauseCircleOutlined /></template>
-              停止回放
-            </a-button>
-
-            <a-alert
-              message="提示：回放时按 ESC 键可立即停止"
-              type="warning"
-              show-icon
-            />
-          </a-space>
+          </div>
         </a-card>
       </a-col>
     </a-row>
 
     <!-- 录制列表 -->
-    <a-card title="录制列表" class="sessions-card" style="margin-top: 16px">
+    <a-card :bordered="false" class="sessions-card hover-card" style="margin-top: 16px">
+      <template #title>
+        <div class="card-title">
+          <FolderOpenOutlined style="color: #1890ff" />
+          <span>录制列表</span>
+          <a-tag color="blue" style="margin-left: 8px">{{ recordingSessions.length }}</a-tag>
+        </div>
+      </template>
       <template #extra>
         <a-space>
-          <a-button @click="importSessions" :disabled="isRecording || isPlaying">
+          <a-button type="dashed" size="small" @click="importSessions" :disabled="isRecording || isPlaying">
             <template #icon><FolderOpenOutlined /></template>
             导入
           </a-button>
-          <a-button @click="exportAllSessions" :disabled="recordingSessions.length === 0">
+          <a-button type="dashed" size="small" @click="exportAllSessions" :disabled="recordingSessions.length === 0">
             <template #icon><SaveOutlined /></template>
             导出全部
           </a-button>
-          <a-button danger @click="clearAllSessions" :disabled="isRecording || isPlaying || recordingSessions.length === 0">
-            <template #icon><DeleteOutlined /></template>
-            清空
-          </a-button>
+          <a-popconfirm
+            title="确定要清空所有录制吗？"
+            @confirm="clearAllSessions"
+          >
+            <a-button type="dashed" danger size="small" :disabled="isRecording || isPlaying || recordingSessions.length === 0">
+              <template #icon><DeleteOutlined /></template>
+              清空
+            </a-button>
+          </a-popconfirm>
         </a-space>
       </template>
 
-      <div v-if="recordingSessions.length === 0" class="empty-sessions">
-        <a-empty description="暂无录制记录" />
+      <div v-if="recordingSessions.length === 0" class="empty-state">
+        <a-empty description="暂无录制记录，请点击上方“开始录制”" />
       </div>
 
       <div v-else class="sessions-list">
-        <div
-          v-for="session in recordingSessions"
-          :key="session.id"
-          class="session-card"
-        >
-          <div class="session-header">
-            <div class="session-info">
-              <div class="session-time">{{ formatDate(session.createTime) }}</div>
-              <div class="session-stats">
-                <a-tag color="blue">{{ session.eventCount }} 个事件</a-tag>
-                <a-tag color="green">{{ formatTime(session.duration) }}</a-tag>
+        <transition-group name="list">
+          <div
+            v-for="session in recordingSessions"
+            :key="session.id"
+            class="session-item"
+            :class="{ 'expanded': expandedSessions.has(session.id) }"
+          >
+            <div class="session-main">
+              <!-- 左侧信息 -->
+              <div class="session-info">
+                <div class="session-header-row">
+                  <span class="session-time">{{ formatDate(session.createTime) }}</span>
+                  <a-tag color="cyan">{{ formatTime(session.duration) }}</a-tag>
+                  <a-tag>{{ session.eventCount }} 事件</a-tag>
+                </div>
+                <div class="session-remark-row">
+                   <div v-if="editingSessionId === session.id" class="remark-edit">
+                      <a-input
+                        v-model:value="editingRemark"
+                        placeholder="输入备注..."
+                        size="small"
+                        @pressEnter="saveRemark(session.id)"
+                        ref="remarkInput"
+                      />
+                      <a-button type="link" size="small" @click="saveRemark(session.id)"><CheckOutlined /></a-button>
+                      <a-button type="link" size="small" danger @click="cancelEditRemark"><CloseOutlined /></a-button>
+                   </div>
+                   <div v-else class="remark-view" @click="startEditRemark(session)">
+                      <EditOutlined class="edit-icon" />
+                      <span class="remark-text" :class="{'placeholder': !session.remark}">
+                        {{ session.remark || '点击添加备注...' }}
+                      </span>
+                   </div>
+                </div>
+              </div>
+
+              <!-- 右侧操作 -->
+              <div class="session-actions">
+                <a-tooltip title="回放此录制">
+                  <a-button
+                    type="primary"
+                    shape="circle"
+                    size="large"
+                    @click="playSession(session)"
+                    :disabled="isRecording || isPlaying"
+                  >
+                    <template #icon><PlayCircleOutlined /></template>
+                  </a-button>
+                </a-tooltip>
+                
+                <a-divider type="vertical" />
+
+                <a-dropdown>
+                  <a-button type="text" shape="circle">
+                    <template #icon><EllipsisOutlined /></template>
+                  </a-button>
+                  <template #overlay>
+                    <a-menu>
+                      <a-menu-item key="export" @click="exportSession(session)">
+                        <SaveOutlined /> 导出
+                      </a-menu-item>
+                      <a-menu-item key="delete" danger @click="deleteSession(session.id)">
+                        <DeleteOutlined /> 删除
+                      </a-menu-item>
+                    </a-menu>
+                  </template>
+                </a-dropdown>
+
+                <a-button
+                  type="text"
+                  size="small"
+                  @click="toggleSessionExpand(session.id)"
+                >
+                  <template #icon>
+                    <DownOutlined :rotate="expandedSessions.has(session.id) ? 180 : 0" />
+                  </template>
+                </a-button>
               </div>
             </div>
-            <div class="session-actions">
-              <a-button
-                type="primary"
-                size="small"
-                @click="playSession(session)"
-                :disabled="isRecording || isPlaying"
-              >
-                <template #icon><PlayCircleOutlined /></template>
-                执行
-              </a-button>
-              <a-button
-                size="small"
-                @click="exportSession(session)"
-                style="margin-left: 8px"
-              >
-                <template #icon><SaveOutlined /></template>
-              </a-button>
-              <a-button
-                danger
-                size="small"
-                @click="deleteSession(session.id)"
-                :disabled="isRecording || isPlaying"
-                style="margin-left: 8px"
-              >
-                <template #icon><DeleteOutlined /></template>
-              </a-button>
-              <a-button
-                size="small"
-                @click="toggleSessionExpand(session.id)"
-                style="margin-left: 8px"
-              >
-                <template #icon>
-                  <DownOutlined v-if="!expandedSessions.has(session.id)" />
-                  <UpOutlined v-else />
-                </template>
-              </a-button>
-            </div>
-          </div>
 
-          <div class="session-remark">
-            <div v-if="editingSessionId !== session.id" class="remark-display">
-              <span class="remark-label">备注：</span>
-              <span class="remark-text">{{ session.remark || '无备注' }}</span>
-              <a-button
-                type="link"
+            <!-- 展开详情 -->
+            <div v-show="expandedSessions.has(session.id)" class="session-detail-panel">
+               <a-table
+                :columns="columns"
+                :data-source="session.events.map((e, i) => formatEventForTable(e, i))"
+                :pagination="{ pageSize: 5, size: 'small' }"
                 size="small"
-                @click="startEditRemark(session)"
-                :disabled="isRecording || isPlaying"
-              >
-                <template #icon><EditOutlined /></template>
-              </a-button>
-            </div>
-            <div v-else class="remark-edit">
-              <a-input
-                v-model:value="editingRemark"
-                placeholder="输入备注"
-                style="flex: 1"
+                :scroll="{ y: 240 }"
               />
-              <a-button
-                type="primary"
-                size="small"
-                @click="saveRemark(session.id)"
-                style="margin-left: 8px"
-              >
-                <template #icon><CheckOutlined /></template>
-              </a-button>
-              <a-button
-                size="small"
-                @click="cancelEditRemark"
-                style="margin-left: 8px"
-              >
-                <template #icon><CloseOutlined /></template>
-              </a-button>
             </div>
           </div>
-
-          <div v-if="expandedSessions.has(session.id)" class="session-details">
-            <a-table
-              :columns="columns"
-              :data-source="session.events.map((e, i) => formatEventForTable(e, i))"
-              :pagination="{ pageSize: 5 }"
-              :scroll="{ y: 200 }"
-              size="small"
-            />
-          </div>
-        </div>
+        </transition-group>
       </div>
     </a-card>
   </div>
@@ -689,181 +720,212 @@ onUnmounted(() => {
 
 <style scoped>
 .recorder-container {
-  padding: 16px;
+  padding-bottom: 24px;
 }
 
-.control-card {
+.hover-card {
+  transition: all 0.3s;
+  border-radius: 12px;
+}
+.hover-card:hover {
+  box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+}
+
+.card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+}
+
+.control-content {
+  display: flex;
+  flex-direction: column;
+  height: 220px; /* 固定高度以保持对齐 */
+}
+
+.status-display-area {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f7f9fa;
   border-radius: 8px;
+  margin-bottom: 16px;
+  position: relative;
+  overflow: hidden;
+}
+
+.status-box {
+  text-align: center;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.idle-box .status-icon {
+  font-size: 32px;
+  color: #d9d9d9;
+  margin-bottom: 8px;
+}
+.idle-box .status-label {
+  color: #999;
+}
+
+.countdown-box {
+  background: #1890ff;
+  color: #fff;
+}
+.countdown-box .status-value {
+  font-size: 48px;
+  font-weight: bold;
+}
+
+.recording-box {
+  background: #fff1f0;
+  border: 1px solid #ffccc7;
+}
+.recording-box .status-value {
+  font-size: 32px;
+  color: #cf1322;
+  font-weight: bold;
+  font-family: monospace;
+}
+.recording-box .pulse-dot {
+  width: 12px;
+  height: 12px;
+  background: #f5222d;
+  border-radius: 50%;
+  margin-bottom: 8px;
+  animation: pulse 1.5s infinite;
+}
+
+.delay-box {
+  background: #722ed1;
+  color: #fff;
+}
+.delay-box .status-value {
+  font-size: 48px;
+  font-weight: bold;
+}
+
+.action-area {
+  height: 80px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
 }
 
 .config-row {
   display: flex;
   align-items: center;
-  padding: 8px 12px;
+  justify-content: center;
+  margin-bottom: 12px;
+  gap: 8px;
+}
+.config-group {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 4px;
+}
+
+.playback-hint {
+  text-align: center;
+  color: #999;
+  font-size: 12px;
+  line-height: 40px; /* match button height */
   background: #f5f5f5;
-  border-radius: 6px;
-}
-
-.label {
-  font-weight: 500;
-  margin-right: 8px;
-}
-
-/* 倒计时显示 */
-.countdown-display {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 8px;
-  animation: countdownPulse 1s ease-in-out infinite;
-}
-
-.countdown-display.execute-delay {
-  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-}
-
-.countdown-number {
-  font-size: 56px;
-  font-weight: bold;
-  color: white;
-  text-shadow: 2px 2px 8px rgba(0, 0, 0, 0.3);
-  animation: countdownScale 1s ease-in-out infinite;
-}
-
-.countdown-text {
-  font-size: 16px;
-  color: white;
-  margin-top: 8px;
-  opacity: 0.9;
-}
-
-@keyframes countdownPulse {
-  0%, 100% { box-shadow: 0 0 20px rgba(102, 126, 234, 0.5); }
-  50% { box-shadow: 0 0 40px rgba(102, 126, 234, 0.8); }
-}
-
-@keyframes countdownScale {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.1); }
-}
-
-/* 录制/回放指示器 */
-.recording-indicator,
-.playing-indicator {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 12px;
-  background: #f0f5ff;
-  border-radius: 6px;
-  font-size: 16px;
-  font-weight: 500;
-}
-
-.recording-time {
-  margin-left: 16px;
-  font-family: 'Courier New', monospace;
-  font-size: 20px;
-  color: #1890ff;
-}
-
-/* 会话列表 */
-.sessions-card {
-  border-radius: 8px;
-}
-
-.empty-sessions {
-  padding: 40px 0;
+  border-radius: 20px;
 }
 
 .sessions-list {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: 400px;
-  overflow-y: auto;
 }
 
-.session-card {
-  background: #fafafa;
-  border: 1px solid #e8e8e8;
+.session-item {
+  background: #fff;
+  border: 1px solid #f0f0f0;
   border-radius: 8px;
-  padding: 12px;
-  transition: all 0.3s ease;
+  transition: all 0.3s;
 }
 
-.session-card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+.session-item:hover {
   border-color: #1890ff;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
 }
 
-.session-header {
+.session-main {
+  padding: 12px 16px;
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
+  justify-content: space-between;
 }
 
-.session-info {
-  flex: 1;
+.session-header-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
 }
 
 .session-time {
-  font-size: 14px;
-  color: #666;
-  margin-bottom: 4px;
-}
-
-.session-stats {
-  display: flex;
-  gap: 8px;
-}
-
-.session-actions {
-  display: flex;
-  align-items: center;
-}
-
-.session-remark {
-  margin-bottom: 8px;
-}
-
-.remark-display {
-  display: flex;
-  align-items: center;
-  padding: 6px 10px;
-  background: white;
-  border-radius: 4px;
-  border: 1px solid #e8e8e8;
-}
-
-.remark-label {
   font-weight: 500;
-  color: #666;
-  margin-right: 8px;
+  color: #262626;
 }
 
-.remark-text {
-  flex: 1;
-  color: #333;
+.remark-view {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #666;
+  font-size: 13px;
+}
+.remark-view:hover {
+  color: #1890ff;
+}
+.remark-text.placeholder {
+  color: #bfbfbf;
+  font-style: italic;
 }
 
 .remark-edit {
   display: flex;
   align-items: center;
+  gap: 4px;
 }
 
-.session-details {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid #e8e8e8;
+.session-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-:deep(.ant-table-thead > tr > th) {
+.session-detail-panel {
+  border-top: 1px dashed #f0f0f0;
+  padding: 12px 16px;
   background: #fafafa;
-  font-weight: 600;
+  border-radius: 0 0 8px 8px;
+}
+
+@keyframes pulse {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(245, 34, 45, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(245, 34, 45, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(245, 34, 45, 0); }
+}
+
+.list-enter-active,
+.list-leave-active {
+  transition: all 0.3s ease;
+}
+.list-enter-from,
+.list-leave-to {
+  opacity: 0;
+  transform: translateX(-20px);
 }
 </style>

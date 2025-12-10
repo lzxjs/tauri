@@ -1,14 +1,25 @@
 <script setup>
-import { computed, ref, onMounted } from "vue";
+import { computed, ref, onMounted, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { message } from "ant-design-vue";
 
 const route = useRoute();
 const router = useRouter();
+const LAST_ROUTE_KEY = "app_last_route_name";
 
 // 顶部功能菜单：launcher(批量启动器) / scraper(网页爬虫) / system(系统信息)
 const activeMenu = computed(() => route.name || "launcher");
+
+// 监听路由变化，保存当前激活的菜单
+watch(
+  () => route.name,
+  (newName) => {
+    if (newName) {
+      localStorage.setItem(LAST_ROUTE_KEY, newName);
+    }
+  }
+);
 
 // 开机启动状态
 const autostartEnabled = ref(false);
@@ -55,30 +66,45 @@ const toggleAutostart = async (checked) => {
 // 组件挂载时检查状态
 onMounted(() => {
   checkAutostartStatus();
+
+  // 恢复上次访问的路由
+  const lastRouteName = localStorage.getItem(LAST_ROUTE_KEY);
+  if (lastRouteName && lastRouteName !== route.name) {
+    router.push({ name: lastRouteName }).catch((err) => {
+      console.warn("恢复上次路由失败:", err);
+    });
+  }
 });
 </script>
 
 <template>
   <div class="container">
-    <a-layout>
+    <a-layout style="min-height: 100vh">
       <a-layout-header class="header">
-        <h1>🍅 小茄的工具箱</h1>
+        <div class="brand">
+          <span class="logo-icon">🍅</span>
+          <h1>小茄的工具箱</h1>
+        </div>
         <div class="header-actions">
-          <span class="autostart-label">开机启动</span>
-          <a-switch
-            v-model:checked="autostartEnabled"
-            :loading="autostartLoading"
-            @change="toggleAutostart"
-          />
+          <a-space>
+            <span class="autostart-label">开机启动</span>
+            <a-switch
+              v-model:checked="autostartEnabled"
+              :loading="autostartLoading"
+              @change="toggleAutostart"
+              size="small"
+            />
+          </a-space>
         </div>
       </a-layout-header>
 
       <a-layout>
-        <a-layout-sider width="220" class="sider">
+        <a-layout-sider width="220" class="sider" theme="light">
           <a-menu
             :selectedKeys="[activeMenu]"
             mode="inline"
             @click="handleMenuClick"
+            style="height: 100%; border-right: 0"
           >
             <a-menu-item key="launcher">应用批量启动器</a-menu-item>
             <a-menu-item key="system">系统与硬件信息</a-menu-item>
@@ -87,12 +113,14 @@ onMounted(() => {
           </a-menu>
         </a-layout-sider>
 
-        <a-layout-content class="content">
-          <router-view v-slot="{ Component }">
-            <transition name="fade" mode="out-in">
-              <component :is="Component" :key="route.name" />
-            </transition>
-          </router-view>
+        <a-layout-content class="content-wrapper">
+          <div class="content">
+            <router-view v-slot="{ Component }">
+              <transition name="fade" mode="out-in">
+                <component :is="Component" :key="route.name" />
+              </transition>
+            </router-view>
+          </div>
         </a-layout-content>
       </a-layout>
     </a-layout>
@@ -105,32 +133,38 @@ onMounted(() => {
   overflow: hidden;
 }
 
-:deep(.ant-layout-sider-children) {
-  background: #fff;
-}
-
 .header {
   background: #fff;
   padding: 0 24px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 1px 4px rgba(0, 21, 41, 0.08);
+  z-index: 10;
+  height: 64px;
+  line-height: 64px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.logo-icon {
+  font-size: 24px;
 }
 
 .header h1 {
   margin: 0;
-  font-size: 24px;
-  color: #1890ff;
-  display: flex;
-  align-items: center;
-  gap: 12px;
+  font-size: 20px;
+  font-weight: 600;
+  color: #1f1f1f;
 }
 
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
 }
 
 .autostart-label {
@@ -139,79 +173,70 @@ onMounted(() => {
   user-select: none;
 }
 
+.sider {
+  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.05);
+  z-index: 5;
+}
+
+.content-wrapper {
+  padding: 16px;
+  background: #f0f2f5;
+  height: calc(100vh - 64px);
+  overflow: hidden;
+}
+
 .content {
-  margin: 18px;
-  height: calc(100vh - 108px);
-  /* max-height:  calc(100vh - 64px); */
+  height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
-  background: #fff;
+  /* background: #fff; */
+  /* border-radius: 8px; */
+  /* padding: 24px; */
+  /* box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03); */
 }
 
-.disk-item {
-  margin-bottom: 16px;
+/* Custom Scrollbar for content */
+.content::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
 }
-
-.disk-item:last-child {
-  margin-bottom: 0;
+.content::-webkit-scrollbar-thumb {
+  background: #ccc;
+  border-radius: 3px;
+}
+.content::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 :deep(.ant-card) {
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03), 0 2px 8px rgba(0, 0, 0, 0.06);
   border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  transition: all 0.3s;
 }
 
-:deep(.ant-card-head) {
-  border-bottom: 1px solid #f0f0f0;
-  font-weight: 600;
-}
-
-.scrape-result {
-  margin-top: 16px;
-}
-
-.result-item {
-  width: 100%;
-}
-
-.result-text p {
-  margin: 8px 0;
-  padding: 8px;
-  background: #f5f5f5;
-  border-radius: 4px;
-  word-break: break-all;
-}
-
-.result-html pre {
-  margin: 8px 0;
-  padding: 12px;
-  background: #f5f5f5;
-  border-radius: 4px;
-  overflow-x: auto;
-  font-size: 12px;
-  line-height: 1.5;
-  color: #333;
+:deep(.ant-card:hover) {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
 /* 路由切换动画 */
 .fade-enter-active,
 .fade-leave-active {
-  transition: opacity 0.3s ease, transform 0.3s ease;
+  transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
 .fade-enter-from {
   opacity: 0;
-  transform: translateX(10px);
+  transform: translateY(10px);
 }
 
 .fade-leave-to {
   opacity: 0;
-  transform: translateX(-10px);
+  transform: translateY(-10px);
 }
 
 .fade-enter-to,
 .fade-leave-from {
   opacity: 1;
-  transform: translateX(0);
+  transform: translateY(0);
 }
 </style>

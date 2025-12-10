@@ -14,6 +14,10 @@ import {
   EditOutlined,
   PlusOutlined,
   FolderOpenOutlined,
+  SettingOutlined,
+  CaretRightOutlined,
+  SwapOutlined,
+  EllipsisOutlined
 } from "@ant-design/icons-vue";
 import {
   apps,

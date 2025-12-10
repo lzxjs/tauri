@@ -278,7 +278,7 @@ const updateStatus = async () => {
     isRecording.value = status.is_recording
     isPlaying.value = status.is_playing
 
-    // 如果之前在录制，现在停止了（按了ESC），自动获取录制结果
+    // 如果之前在录制，现在停止了（按了Ctrl+ESC），自动获取录制结果
     if (wasRecording && !isRecording.value && recordingTimer) {
       clearInterval(recordingTimer)
       recordingTimer = null
@@ -297,7 +297,7 @@ const updateStatus = async () => {
           }
 
           recordingSessions.value.unshift(session)
-          message.success(`录制完成（ESC停止），共 ${result.length} 个事件`)
+          message.success(`录制完成（Ctrl+ESC停止），共 ${result.length} 个事件`)
         }
       } catch (error) {
         console.error('获取录制结果失败:', error)
@@ -440,7 +440,7 @@ onUnmounted(() => {
               <div v-else-if="isRecording" class="status-box recording-box">
                 <div class="pulse-dot"></div>
                 <div class="status-value time-font">{{ formatTime(recordingTime) }}</div>
-                <div class="status-label">录制中 (ESC 停止)</div>
+                <div class="status-label">录制中 (Ctrl+ESC 停止)</div>
               </div>
 
               <div v-else class="status-box idle-box">
@@ -517,7 +517,7 @@ onUnmounted(() => {
               
               <div v-else-if="isPlaying" class="status-box playing-box">
                 <a-spin size="large" />
-                <div class="status-label" style="margin-top: 12px">正在回放 (ESC 停止)</div>
+                <div class="status-label" style="margin-top: 12px">正在回放 (Ctrl+ESC 停止)</div>
               </div>
 
               <div v-else class="status-box idle-box">

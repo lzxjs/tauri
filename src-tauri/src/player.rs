@@ -1,9 +1,9 @@
+use crate::recorder::RecordedEvent;
+use parking_lot::Mutex;
 use rdev::{simulate, Button, EventType, Key};
 use std::sync::Arc;
-use parking_lot::Mutex;
 use std::thread;
 use std::time::Duration;
-use crate::recorder::RecordedEvent;
 
 pub struct Player {
     is_playing: Arc<Mutex<bool>>,

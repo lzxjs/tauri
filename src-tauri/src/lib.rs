@@ -1,17 +1,17 @@
-mod recorder;
-mod player;
 mod monitor;
+mod player;
+mod recorder;
 
-use recorder::{Recorder, RecordedEvent};
-use player::Player;
 use monitor::start_monitor;
-use std::sync::Arc;
 use parking_lot::Mutex;
-use serde::{Deserialize, Serialize};
-use sysinfo::{System, Disks};
+use player::Player;
+use recorder::{RecordedEvent, Recorder};
 use scraper::{Html, Selector};
-use std::process::Command as StdCommand;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
+use std::process::Command as StdCommand;
+use std::sync::Arc;
+use sysinfo::{Disks, System};
 
 #[derive(Serialize, Deserialize)]
 struct SystemInfo {
@@ -133,7 +133,7 @@ fn open_app_folder(path: String) -> Result<(), String> {
 fn get_cpu_info() -> CpuInfo {
     let mut sys = System::new_all();
     sys.refresh_cpu_all();
-    
+
     let cpus = sys.cpus();
     let cpu_count = cpus.len();
     let cpu_brand = if !cpus.is_empty() {
@@ -146,7 +146,7 @@ fn get_cpu_info() -> CpuInfo {
     } else {
         0
     };
-    
+
     CpuInfo {
         cpu_count,
         cpu_brand,
@@ -158,7 +158,7 @@ fn get_cpu_info() -> CpuInfo {
 fn get_memory_info() -> MemoryInfo {
     let mut sys = System::new_all();
     sys.refresh_memory();
-    
+
     MemoryInfo {
         total_memory: sys.total_memory(),
         used_memory: sys.used_memory(),
@@ -171,27 +171,26 @@ fn get_memory_info() -> MemoryInfo {
 #[tauri::command]
 fn get_disk_info() -> Vec<DiskInfo> {
     let disks = Disks::new_with_refreshed_list();
-    
-    disks.iter().map(|disk| {
-        DiskInfo {
+
+    disks
+        .iter()
+        .map(|disk| DiskInfo {
             name: disk.name().to_string_lossy().to_string(),
             mount_point: disk.mount_point().to_string_lossy().to_string(),
             total_space: disk.total_space(),
             available_space: disk.available_space(),
             file_system: disk.file_system().to_string_lossy().to_string(),
-        }
-    }).collect()
+        })
+        .collect()
 }
 
 #[tauri::command]
 fn fetch_url(url: String) -> Result<String, String> {
     match reqwest::blocking::get(&url) {
-        Ok(response) => {
-            match response.text() {
-                Ok(html) => Ok(html),
-                Err(e) => Err(format!("Failed to read response: {}", e)),
-            }
-        }
+        Ok(response) => match response.text() {
+            Ok(html) => Ok(html),
+            Err(e) => Err(format!("Failed to read response: {}", e)),
+        },
         Err(e) => Err(format!("Failed to fetch URL: {}", e)),
     }
 }
@@ -199,7 +198,7 @@ fn fetch_url(url: String) -> Result<String, String> {
 #[tauri::command]
 fn parse_html_by_selector(html: String, selector: String) -> ScrapeResult {
     let document = Html::parse_document(&html);
-    
+
     match Selector::parse(&selector) {
         Ok(css_selector) => {
             let elements: Vec<ScrapedElement> = document
@@ -209,7 +208,7 @@ fn parse_html_by_selector(html: String, selector: String) -> ScrapeResult {
                     html: element.html(),
                 })
                 .collect();
-            
+
             ScrapeResult {
                 success: true,
                 data: elements,
@@ -227,16 +226,14 @@ fn parse_html_by_selector(html: String, selector: String) -> ScrapeResult {
 #[tauri::command]
 fn scrape_page(url: String, selector: String) -> ScrapeResult {
     match reqwest::blocking::get(&url) {
-        Ok(response) => {
-            match response.text() {
-                Ok(html) => parse_html_by_selector(html, selector),
-                Err(e) => ScrapeResult {
-                    success: false,
-                    data: Vec::new(),
-                    error: Some(format!("Failed to read response: {}", e)),
-                },
-            }
-        }
+        Ok(response) => match response.text() {
+            Ok(html) => parse_html_by_selector(html, selector),
+            Err(e) => ScrapeResult {
+                success: false,
+                data: Vec::new(),
+                error: Some(format!("Failed to read response: {}", e)),
+            },
+        },
         Err(e) => ScrapeResult {
             success: false,
             data: Vec::new(),
@@ -319,67 +316,72 @@ fn clear_recorded_events(state: tauri::State<RecorderState>) -> Result<String, S
 }
 
 #[tauri::command]
-fn set_recorded_events(state: tauri::State<RecorderState>, events: Vec<RecordedEvent>) -> Result<String, String> {
+fn set_recorded_events(
+    state: tauri::State<RecorderState>,
+    events: Vec<RecordedEvent>,
+) -> Result<String, String> {
     *state.events.lock() = events;
     Ok("事件已设置".to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-  // 初始化录制器状态
-  let recorder = Arc::new(Mutex::new(Recorder::new()));
-  let player = Arc::new(Mutex::new(Player::new()));
-  let events = Arc::new(Mutex::new(Vec::new()));
+    // 初始化录制器状态
+    let recorder = Arc::new(Mutex::new(Recorder::new()));
+    let player = Arc::new(Mutex::new(Player::new()));
+    let events = Arc::new(Mutex::new(Vec::new()));
 
-  let recorder_state = RecorderState {
-      recorder: Arc::clone(&recorder),
-      player: Arc::clone(&player),
-      events: Arc::clone(&events),
-  };
+    let recorder_state = RecorderState {
+        recorder: Arc::clone(&recorder),
+        player: Arc::clone(&player),
+        events: Arc::clone(&events),
+    };
 
-  // 启动全局输入监控
-  start_monitor(Arc::clone(&recorder), Arc::clone(&player));
+    // 启动全局输入监控
+    start_monitor(Arc::clone(&recorder), Arc::clone(&player));
 
-  tauri::Builder::default()
-    .plugin(tauri_plugin_store::Builder::default().build())
-    .manage(recorder_state)
-    .setup(|app| {
-      if cfg!(debug_assertions) {
-        app.handle().plugin(
-          tauri_plugin_log::Builder::default()
-            .level(log::LevelFilter::Info)
-            .build(),
-        )?;
-      }
-      
-      // 初始化 autostart 插件
-      #[cfg(desktop)]
-      app.handle().plugin(tauri_plugin_autostart::init(
-        tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-        None, // 不传递额外参数
-      ))?;
-      
-      Ok(())
-    })
-    .invoke_handler(tauri::generate_handler![
-      get_system_info,
-      get_cpu_info,
-      get_memory_info,
-      get_disk_info,
-      fetch_url,
-      parse_html_by_selector,
-      scrape_page,
-      launch_app,
-      open_app_folder,
-      start_record,
-      stop_record,
-      play_record,
-      stop_play,
-      get_recorder_status,
-      get_recorded_events,
-      clear_recorded_events,
-      set_recorded_events
-    ])
-    .run(tauri::generate_context!())
-    .expect("error while running tauri application");
+    tauri::Builder::default()
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_store::Builder::default().build())
+        .manage(recorder_state)
+        .setup(|app| {
+            if cfg!(debug_assertions) {
+                app.handle().plugin(
+                    tauri_plugin_log::Builder::default()
+                        .level(log::LevelFilter::Info)
+                        .build(),
+                )?;
+            }
+
+            // 初始化 autostart 插件
+            #[cfg(desktop)]
+            app.handle().plugin(tauri_plugin_autostart::init(
+                tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+                None, // 不传递额外参数
+            ))?;
+
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            get_system_info,
+            get_cpu_info,
+            get_memory_info,
+            get_disk_info,
+            fetch_url,
+            parse_html_by_selector,
+            scrape_page,
+            launch_app,
+            open_app_folder,
+            start_record,
+            stop_record,
+            play_record,
+            stop_play,
+            get_recorder_status,
+            get_recorded_events,
+            clear_recorded_events,
+            set_recorded_events
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
 }

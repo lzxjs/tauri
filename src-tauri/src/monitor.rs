@@ -1,13 +1,10 @@
+use crate::player::Player;
+use crate::recorder::Recorder;
+use parking_lot::Mutex;
 use rdev::{listen, EventType, Key};
 use std::sync::Arc;
-use parking_lot::Mutex;
-use crate::recorder::Recorder;
-use crate::player::Player;
 
-pub fn start_monitor(
-    recorder: Arc<Mutex<Recorder>>, 
-    player: Arc<Mutex<Player>>
-) {
+pub fn start_monitor(recorder: Arc<Mutex<Recorder>>, player: Arc<Mutex<Player>>) {
     std::thread::spawn(move || {
         let mut ctrl_pressed = false;
 
@@ -17,7 +14,8 @@ pub fn start_monitor(
                 EventType::KeyPress(Key::ControlLeft) | EventType::KeyPress(Key::ControlRight) => {
                     ctrl_pressed = true;
                 }
-                EventType::KeyRelease(Key::ControlLeft) | EventType::KeyRelease(Key::ControlRight) => {
+                EventType::KeyRelease(Key::ControlLeft)
+                | EventType::KeyRelease(Key::ControlRight) => {
                     ctrl_pressed = false;
                 }
                 _ => {}
@@ -37,7 +35,7 @@ pub fn start_monitor(
                     if player_guard.is_playing() {
                         player_guard.stop_playing();
                     }
-                    
+
                     // 组合键触发后不录制该 ESC 事件
                     return;
                 }

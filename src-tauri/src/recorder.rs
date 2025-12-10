@@ -65,7 +65,8 @@ impl Recorder {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
-            .as_millis() as u64 - self.start_time;
+            .as_millis() as u64
+            - self.start_time;
 
         let recorded_event = match event.event_type {
             EventType::MouseMove { x, y } => Some(RecordedEvent {
@@ -92,26 +93,22 @@ impl Recorder {
                 key: None,
                 timestamp,
             }),
-            EventType::KeyPress(key) => {
-                Some(RecordedEvent {
-                    event_type: "KeyPress".to_string(),
-                    x: None,
-                    y: None,
-                    button: None,
-                    key: Some(format!("{:?}", key)),
-                    timestamp,
-                })
-            },
-            EventType::KeyRelease(key) => {
-                Some(RecordedEvent {
-                    event_type: "KeyRelease".to_string(),
-                    x: None,
-                    y: None,
-                    button: None,
-                    key: Some(format!("{:?}", key)),
-                    timestamp,
-                })
-            },
+            EventType::KeyPress(key) => Some(RecordedEvent {
+                event_type: "KeyPress".to_string(),
+                x: None,
+                y: None,
+                button: None,
+                key: Some(format!("{:?}", key)),
+                timestamp,
+            }),
+            EventType::KeyRelease(key) => Some(RecordedEvent {
+                event_type: "KeyRelease".to_string(),
+                x: None,
+                y: None,
+                button: None,
+                key: Some(format!("{:?}", key)),
+                timestamp,
+            }),
             _ => None,
         };
 

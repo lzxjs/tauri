@@ -3,6 +3,8 @@ import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { message } from 'ant-design-vue'
 import { Store } from '@tauri-apps/plugin-store'
+import { save } from '@tauri-apps/plugin-dialog'
+import { writeTextFile } from '@tauri-apps/plugin-fs'
 import {
   PlayCircleOutlined,
   StopOutlined,
@@ -211,33 +213,51 @@ const clearAllSessions = () => {
   message.success('所有录制已清空')
 }
 
-const exportSession = (session) => {
-  const dataStr = JSON.stringify(session, null, 2)
-  const dataBlob = new Blob([dataStr], { type: 'application/json' })
-  const url = URL.createObjectURL(dataBlob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = `recording_${session.id}.json`
-  link.click()
-  URL.revokeObjectURL(url)
-  message.success('导出成功')
+const exportSession = async (session) => {
+  try {
+    const filePath = await save({
+      filters: [{
+        name: 'JSON File',
+        extensions: ['json']
+      }],
+      defaultPath: `recording_${session.id}.json`
+    })
+
+    if (!filePath) return
+
+    const dataStr = JSON.stringify(session, null, 2)
+    await writeTextFile(filePath, dataStr)
+    message.success('导出成功')
+  } catch (error) {
+    console.error('导出失败:', error)
+    message.error('导出失败: ' + error)
+  }
 }
 
-const exportAllSessions = () => {
+const exportAllSessions = async () => {
   if (recordingSessions.value.length === 0) {
     message.warning('没有可导出的录制')
     return
   }
 
-  const dataStr = JSON.stringify(recordingSessions.value, null, 2)
-  const dataBlob = new Blob([dataStr], { type: 'application/json' })
-  const url = URL.createObjectURL(dataBlob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = `all_recordings_${Date.now()}.json`
-  link.click()
-  URL.revokeObjectURL(url)
-  message.success('导出成功')
+  try {
+    const filePath = await save({
+      filters: [{
+        name: 'JSON File',
+        extensions: ['json']
+      }],
+      defaultPath: `all_recordings_${Date.now()}.json`
+    })
+
+    if (!filePath) return
+
+    const dataStr = JSON.stringify(recordingSessions.value, null, 2)
+    await writeTextFile(filePath, dataStr)
+    message.success('导出成功')
+  } catch (error) {
+    console.error('导出失败:', error)
+    message.error('导出失败: ' + error)
+  }
 }
 
 const importSessions = () => {

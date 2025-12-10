@@ -1,26 +1,29 @@
 <script setup>
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { message } from 'ant-design-vue'
 import { Store } from '@tauri-apps/plugin-store'
 import { save } from '@tauri-apps/plugin-dialog'
 import { writeTextFile } from '@tauri-apps/plugin-fs'
 import {
-  PlayCircleOutlined,
-  StopOutlined,
-  PauseCircleOutlined,
+  PlayCircleFilled,
+  StopFilled,
+  PauseCircleFilled,
   FolderOpenOutlined,
   SaveOutlined,
   DeleteOutlined,
   DownOutlined,
-  UpOutlined,
   EditOutlined,
   CheckOutlined,
   CloseOutlined,
-  VideoCameraOutlined,
+  VideoCameraFilled,
   EllipsisOutlined,
   ReloadOutlined,
-  ThunderboltOutlined
+  ThunderboltFilled,
+  ClockCircleOutlined,
+  SettingOutlined,
+  RocketOutlined,
+  HistoryOutlined
 } from '@ant-design/icons-vue'
 
 // Store 实例
@@ -61,11 +64,20 @@ const editingRemark = ref('')
 
 // 事件详情表格列定义
 const columns = [
-  { title: '序号', dataIndex: 'index', key: 'index', width: 80 },
+  { title: '序号', dataIndex: 'index', key: 'index', width: 80, align: 'center' },
   { title: '事件类型', dataIndex: 'event_type', key: 'event_type', width: 150 },
   { title: '详情', dataIndex: 'details', key: 'details' },
-  { title: '时间戳 (ms)', dataIndex: 'timestamp', key: 'timestamp', width: 150 },
+  { title: '时间戳 (ms)', dataIndex: 'timestamp', key: 'timestamp', width: 120, align: 'right' },
 ]
+
+// 计算属性：当前状态文本
+const statusText = computed(() => {
+  if (isCountingDown.value) return `倒计时 ${currentCountdown.value}s`
+  if (isRecording.value) return '正在录制'
+  if (isExecuteDelaying.value) return `等待执行 ${currentExecuteDelay.value}s`
+  if (isPlaying.value) return '正在回放'
+  return '准备就绪'
+})
 
 // 重置设置
 const resetSettings = () => {
@@ -402,12 +414,10 @@ const formatEventForTable = (event, index) => {
 const formatDate = (timestamp) => {
   const date = new Date(timestamp)
   return date.toLocaleString('zh-CN', {
-    year: 'numeric',
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit'
+    minute: '2-digit'
   })
 }
 
@@ -419,58 +429,35 @@ const formatTime = (seconds) => {
 
 // 监听配置变化，自动保存到 store
 watch(countdownEnabled, async (newValue) => {
-  if (settingsStore) {
-    await settingsStore.set('recorder_countdownEnabled', newValue)
-  }
+  if (settingsStore) await settingsStore.set('recorder_countdownEnabled', newValue)
 })
-
 watch(countdownSeconds, async (newValue) => {
-  if (settingsStore) {
-    await settingsStore.set('recorder_countdownSeconds', newValue)
-  }
+  if (settingsStore) await settingsStore.set('recorder_countdownSeconds', newValue)
 })
-
 watch(executeDelayEnabled, async (newValue) => {
-  if (settingsStore) {
-    await settingsStore.set('recorder_executeDelayEnabled', newValue)
-  }
+  if (settingsStore) await settingsStore.set('recorder_executeDelayEnabled', newValue)
 })
-
 watch(executeDelaySeconds, async (newValue) => {
-  if (settingsStore) {
-    await settingsStore.set('recorder_executeDelaySeconds', newValue)
-  }
+  if (settingsStore) await settingsStore.set('recorder_executeDelaySeconds', newValue)
 })
-
 watch(playbackSpeed, async (newValue) => {
-  if (settingsStore) {
-    await settingsStore.set('recorder_playbackSpeed', newValue)
-  }
+  if (settingsStore) await settingsStore.set('recorder_playbackSpeed', newValue)
 })
-
 watch(skipIdleEnabled, async (newValue) => {
-  if (settingsStore) {
-    await settingsStore.set('recorder_skipIdleEnabled', newValue)
-  }
+  if (settingsStore) await settingsStore.set('recorder_skipIdleEnabled', newValue)
 })
-
 watch(maxIdleSeconds, async (newValue) => {
-  if (settingsStore) {
-    await settingsStore.set('recorder_maxIdleSeconds', newValue)
-  }
+  if (settingsStore) await settingsStore.set('recorder_maxIdleSeconds', newValue)
 })
-
-// 监听会话列表变化，自动保存到 store
 watch(recordingSessions, async (newValue) => {
-  if (sessionsStore) {
-    await sessionsStore.set('recorder_sessions', newValue)
-  }
+  if (sessionsStore) await sessionsStore.set('recorder_sessions', newValue)
 }, { deep: true })
 
 const showInstructionModal = ref(false)
 onMounted(async () => {
   try {
     settingsStore = await Store.load('settings.json', { autoSave: true })
+    sessionsStore = await Store.load('recorder_sessions.json', { autoSave: true })
 
     const savedCountdownEnabled = await settingsStore.get('recorder_countdownEnabled')
     const savedCountdownSeconds = await settingsStore.get('recorder_countdownSeconds')
@@ -488,624 +475,937 @@ onMounted(async () => {
     if (savedSkipIdleEnabled !== null) skipIdleEnabled.value = savedSkipIdleEnabled
     if (savedMaxIdleSeconds !== null) maxIdleSeconds.value = savedMaxIdleSeconds
 
-    sessionsStore = await Store.load('recorder_sessions.json', { autoSave: true })
-
     const savedSessions = await sessionsStore.get('recorder_sessions')
     if (savedSessions && Array.isArray(savedSessions)) {
       recordingSessions.value = savedSessions
     }
   } catch (error) {
     console.error('初始化 store 失败:', error)
-    message.error('加载配置失败')
   }
   showInstructionModal.value = true
-
-  // 检查是否显示首次提示
-  // const hasSeenInstruction = localStorage.getItem('recorder_instruction_seen')
-  // if (!hasSeenInstruction) {
-  //   showInstructionModal.value = true
-  // }
-
   statusTimer = setInterval(updateStatus, 1000)
 })
 
 onUnmounted(() => {
-  if (recordingTimer) {
-    clearInterval(recordingTimer)
-  }
-  if (statusTimer) {
-    clearInterval(statusTimer)
-  }
+  if (recordingTimer) clearInterval(recordingTimer)
+  if (statusTimer) clearInterval(statusTimer)
 })
 </script>
 
 <template>
   <div class="recorder-container">
     <!-- 顶部标题栏 -->
-    <div class="page-header">
-      <div class="header-title">
-        <VideoCameraOutlined /> 录制器
+    <div class="page-header glass-panel">
+      <div class="header-left">
+        <div class="header-icon-box">
+          <VideoCameraFilled />
+        </div>
+        <div class="header-title">操作录制</div>
       </div>
-      <a-button type="text" @click="resetSettings">
-        <template #icon><ReloadOutlined /></template>
-        恢复默认设置
-      </a-button>
+      <div class="header-right">
+        <div class="status-indicator" :class="{
+          'recording': isRecording,
+          'playing': isPlaying,
+          'waiting': isCountingDown || isExecuteDelaying
+        }">
+          <div class="dot"></div>
+          <span class="status-text">{{ statusText }}</span>
+          <span v-if="isRecording" class="time-counter">{{ formatTime(recordingTime) }}</span>
+        </div>
+        <a-tooltip title="恢复默认设置">
+          <a-button type="text" shape="circle" @click="resetSettings">
+            <ReloadOutlined />
+          </a-button>
+        </a-tooltip>
+      </div>
     </div>
 
-    <!-- 顶部控制区 -->
-    <a-row :gutter="[16, 16]">
-      <!-- 录制控制 -->
-      <a-col :xs="24" :lg="12">
-        <a-card :bordered="false" class="control-card hover-card">
-          <template #title>
+    <!-- 主要内容区 -->
+    <div class="content-grid">
+      <!-- 左侧：控制面板 -->
+      <div class="control-panel">
+        <!-- 录制卡片 -->
+        <div class="panel-card record-card" :class="{ 'active': isRecording }">
+          <div class="card-header">
             <div class="card-title">
-              <VideoCameraOutlined style="color: #ff4d4f" />
-              <span>录制控制</span>
+              <div class="icon-wrapper red">
+                <div class="record-dot"></div>
+              </div>
+              录制配置
             </div>
-          </template>
+            <a-switch 
+              v-model:checked="countdownEnabled" 
+              checked-children="倒计时开" 
+              un-checked-children="倒计时关"
+              :disabled="isRecording || isPlaying"
+            />
+          </div>
           
-          <div class="control-content">
-            <!-- 状态显示区 -->
-            <div class="status-display-area">
-              <div v-if="isCountingDown" class="status-box countdown-box">
-                <div class="status-value">{{ currentCountdown }}</div>
-                <div class="status-label">准备开始...</div>
-              </div>
-              
-              <div v-else-if="isRecording" class="status-box recording-box">
-                <div class="pulse-dot"></div>
-                <div class="status-value time-font">{{ formatTime(recordingTime) }}</div>
-                <div class="status-label">录制中 (Ctrl+ESC 停止)</div>
-              </div>
-
-              <div v-else class="status-box idle-box">
-                <div class="status-icon"><VideoCameraOutlined /></div>
-                <div class="status-label">准备就绪</div>
-              </div>
-            </div>
-
-            <!-- 操作区 -->
-            <div class="action-area">
-              <div class="config-row">
-                <a-checkbox v-model:checked="countdownEnabled" :disabled="isRecording || isPlaying">
-                  倒计时
-                </a-checkbox>
+          <div class="card-body">
+            <div class="setting-row" v-if="countdownEnabled">
+              <span class="label">倒计时时长</span>
+              <div class="value-control">
                 <a-input-number
                   v-model:value="countdownSeconds"
                   :min="1"
                   :max="10"
                   size="small"
-                  style="width: 60px"
-                  :disabled="!countdownEnabled || isRecording || isPlaying"
+                  :disabled="isRecording || isPlaying"
                 />
                 <span class="unit">秒</span>
               </div>
+            </div>
 
-              <div class="main-btn">
-                <a-button
-                  v-if="!isRecording"
-                  type="primary"
-                  danger
-                  size="large"
-                  block
-                  shape="round"
-                  @click="startRecording"
-                  :disabled="isPlaying || isCountingDown"
-                >
-                  <template #icon><PlayCircleOutlined /></template>
-                  开始录制
-                </a-button>
-                <a-button
-                  v-else
-                  size="large"
-                  block
-                  shape="round"
-                  class="stop-btn"
-                  @click="stopRecording"
-                >
-                  <template #icon><StopOutlined /></template>
-                  停止录制
-                </a-button>
-              </div>
+            <div class="action-btn-area">
+              <button 
+                class="big-action-btn record-btn" 
+                :class="{ 'recording': isRecording, 'disabled': isPlaying || isCountingDown }"
+                @click="isRecording ? stopRecording() : startRecording()"
+                :disabled="isPlaying || isCountingDown"
+              >
+                <div class="btn-inner">
+                  <component :is="isRecording ? StopFilled : VideoCameraFilled" />
+                  <span>{{ isRecording ? '停止录制' : '开始录制' }}</span>
+                </div>
+                <div v-if="isRecording" class="pulse-ring"></div>
+              </button>
             </div>
           </div>
-        </a-card>
-      </a-col>
+        </div>
 
-      <!-- 回放控制 -->
-      <a-col :xs="24" :lg="12">
-        <a-card :bordered="false" class="control-card hover-card">
-          <template #title>
+        <!-- 回放卡片 -->
+        <div class="panel-card playback-card" :class="{ 'active': isPlaying }">
+          <div class="card-header">
             <div class="card-title">
-              <PlayCircleOutlined style="color: #52c41a" />
-              <span>回放配置</span>
+              <div class="icon-wrapper green">
+                <PlayCircleFilled />
+              </div>
+              回放配置
             </div>
-          </template>
-
-          <div class="control-content">
-             <!-- 状态显示区 -->
-             <div class="status-display-area">
-              <div v-if="isExecuteDelaying" class="status-box delay-box">
-                <div class="status-value">{{ currentExecuteDelay }}</div>
-                <div class="status-label">等待执行...</div>
-              </div>
-              
-              <div v-else-if="isPlaying" class="status-box playing-box">
-                <a-spin size="large" />
-                <div class="status-label" style="margin-top: 12px">正在回放 (Ctrl+ESC 停止)</div>
-              </div>
-
-              <div v-else class="status-box idle-box">
-                <div class="status-icon"><PlayCircleOutlined /></div>
-                <div class="status-label">等待指令</div>
-              </div>
-            </div>
-
-            <!-- 操作区 -->
-            <div class="action-area">
-              <!-- 新增配置：速度与空闲 -->
-              <div class="config-group">
-                <div class="config-row">
-                   <ThunderboltOutlined style="color: #faad14; margin-right: 4px"/>
-                   <a-select v-model:value="playbackSpeed" size="small" style="width: 70px" :disabled="isRecording || isPlaying" :options="[
-                      { value: 0.5, label: '0.5x' },
-                      { value: 1, label: '1.0x' },
-                      { value: 2, label: '2.0x' },
-                      { value: 4, label: '4.0x' },
-                      { value: 8, label: '8.0x' }
-                   ]" />
-                </div>
-                <div class="config-row">
-                   <a-checkbox v-model:checked="skipIdleEnabled" :disabled="isRecording || isPlaying">
-                    <HourglassOutlined /> 跳过空闲
-                  </a-checkbox>
-                  <a-input-number
-                    v-model:value="maxIdleSeconds"
-                    :min="0.1"
-                    :max="10"
-                    :step="0.1"
-                    size="small"
-                    style="width: 50px"
-                    :disabled="!skipIdleEnabled || isRecording || isPlaying"
+          </div>
+          
+          <div class="card-body">
+            <div class="settings-grid">
+              <div class="setting-item">
+                <div class="label"><RocketOutlined /> 启动延迟</div>
+                <div class="control-group">
+                  <a-checkbox v-model:checked="executeDelayEnabled" :disabled="isRecording || isPlaying" />
+                  <a-input-number 
+                    v-model:value="executeDelaySeconds" 
+                    :min="1" :max="10" size="small" 
+                    :disabled="!executeDelayEnabled || isRecording || isPlaying" 
+                    style="width: 60px"
                   />
                   <span class="unit">s</span>
                 </div>
               </div>
 
-              <div class="config-group">
-                <div class="config-row">
-                  <a-checkbox v-model:checked="executeDelayEnabled" :disabled="isRecording || isPlaying">
-                    延迟启动
-                  </a-checkbox>
+              <div class="setting-item">
+                <div class="label"><ThunderboltFilled /> 播放倍速</div>
+                <a-select 
+                  v-model:value="playbackSpeed" 
+                  size="small" 
+                  style="width: 100%" 
+                  :disabled="isRecording || isPlaying" 
+                  :options="[
+                    { value: 0.5, label: '0.5x 慢速' },
+                    { value: 1, label: '1.0x 正常' },
+                    { value: 2, label: '2.0x 快速' },
+                    { value: 4, label: '4.0x 极速' },
+                    { value: 8, label: '8.0x 飞速' }
+                  ]" 
+                />
+              </div>
+
+              <div class="setting-item full-width">
+                <div class="label"><HistoryOutlined /> 循环设置</div>
+                <div class="control-group">
+                   <a-radio-group v-model:value="isInfinite" size="small" :disabled="isRecording || isPlaying">
+                    <a-radio :value="false">有限</a-radio>
+                    <a-radio :value="true">无限</a-radio>
+                  </a-radio-group>
                   <a-input-number
-                    v-model:value="executeDelaySeconds"
-                    :min="1"
-                    :max="10"
-                    size="small"
-                    style="width: 60px"
-                    :disabled="!executeDelayEnabled || isRecording || isPlaying"
-                  />
-                  <span class="unit">秒</span>
-                </div>
-                <div class="config-row">
-                   <span class="label">循环:</span>
-                   <a-input-number
+                    v-if="!isInfinite"
                     v-model:value="repeatCount"
-                    :min="1"
-                    :max="999"
-                    size="small"
+                    :min="1" :max="999" size="small"
+                    :disabled="isRecording || isPlaying"
                     style="width: 60px"
-                    :disabled="isInfinite || isRecording || isPlaying"
                   />
-                  <a-checkbox
-                    v-model:checked="isInfinite"
-                    style="margin-left: 8px"
-                    :disabled="isRecording || isPlaying"
-                  >
-                    无限
+                  <span v-if="!isInfinite" class="unit">次</span>
+                </div>
+              </div>
+              
+               <div class="setting-item full-width">
+                <div class="label"><ClockCircleOutlined /> 智能跳过</div>
+                 <div class="control-group">
+                  <a-checkbox v-model:checked="skipIdleEnabled" :disabled="isRecording || isPlaying">
+                    跳过 > {{ maxIdleSeconds }}s 的空闲
                   </a-checkbox>
-                </div>
-              </div>
-
-              <div class="main-btn">
-                 <a-button
-                  v-if="isPlaying"
-                  danger
-                  size="large"
-                  block
-                  shape="round"
-                  @click="stopPlaying"
-                >
-                  <template #icon><PauseCircleOutlined /></template>
-                  停止回放
-                </a-button>
-                <div v-else class="playback-hint">
-                  请在下方列表中选择一个录制进行回放
-                </div>
-              </div>
-            </div>
-          </div>
-        </a-card>
-      </a-col>
-    </a-row>
-
-    <!-- 录制列表 -->
-    <a-card :bordered="false" class="sessions-card hover-card" style="margin-top: 16px">
-      <template #title>
-        <div class="card-title">
-          <FolderOpenOutlined style="color: #1890ff" />
-          <span>录制列表</span>
-          <a-tag color="blue" style="margin-left: 8px">{{ recordingSessions.length }}</a-tag>
-        </div>
-      </template>
-      <template #extra>
-        <a-space>
-          <a-button type="dashed" size="small" @click="importSessions" :disabled="isRecording || isPlaying">
-            <template #icon><FolderOpenOutlined /></template>
-            导入
-          </a-button>
-          <a-button type="dashed" size="small" @click="exportAllSessions" :disabled="recordingSessions.length === 0">
-            <template #icon><SaveOutlined /></template>
-            导出全部
-          </a-button>
-          <a-popconfirm
-            title="确定要清空所有录制吗？"
-            @confirm="clearAllSessions"
-          >
-            <a-button type="dashed" danger size="small" :disabled="isRecording || isPlaying || recordingSessions.length === 0">
-              <template #icon><DeleteOutlined /></template>
-              清空
-            </a-button>
-          </a-popconfirm>
-        </a-space>
-      </template>
-
-      <div v-if="recordingSessions.length === 0" class="empty-state">
-        <a-empty description="暂无录制记录，请点击上方“开始录制”" />
-      </div>
-
-      <div v-else class="sessions-list">
-        <transition-group name="list">
-          <div
-            v-for="session in recordingSessions"
-            :key="session.id"
-            class="session-item"
-            :class="{ 'expanded': expandedSessions.has(session.id) }"
-          >
-            <div class="session-main">
-              <!-- 左侧信息 -->
-              <div class="session-info">
-                <div class="session-header-row">
-                  <span class="session-time">{{ formatDate(session.createTime) }}</span>
-                  <a-tag color="cyan">{{ formatTime(session.duration) }}</a-tag>
-                  <a-tag>{{ session.eventCount }} 事件</a-tag>
-                </div>
-                <div class="session-remark-row">
-                   <div v-if="editingSessionId === session.id" class="remark-edit">
-                      <a-input
-                        v-model:value="editingRemark"
-                        placeholder="输入备注..."
-                        size="small"
-                        @pressEnter="saveRemark(session.id)"
-                        ref="remarkInput"
-                      />
-                      <a-button type="link" size="small" @click="saveRemark(session.id)"><CheckOutlined /></a-button>
-                      <a-button type="link" size="small" danger @click="cancelEditRemark"><CloseOutlined /></a-button>
-                   </div>
-                   <div v-else class="remark-view" @click="startEditRemark(session)">
-                      <EditOutlined class="edit-icon" />
-                      <span class="remark-text" :class="{'placeholder': !session.remark}">
-                        {{ session.remark || '点击添加备注...' }}
-                      </span>
-                   </div>
-                </div>
-              </div>
-
-              <!-- 右侧操作 -->
-              <div class="session-actions">
-                <a-tooltip title="回放此录制">
-                  <a-button
-                    type="primary"
-                    shape="circle"
-                    size="large"
-                    @click="playSession(session)"
+                   <a-input-number
+                    v-if="skipIdleEnabled"
+                    v-model:value="maxIdleSeconds"
+                    :min="0.1" :max="10" :step="0.1" size="small"
                     :disabled="isRecording || isPlaying"
-                  >
-                    <template #icon><PlayCircleOutlined /></template>
-                  </a-button>
-                </a-tooltip>
-                
-                <a-divider type="vertical" />
-
-                <a-dropdown>
-                  <a-button type="text" shape="circle">
-                    <template #icon><EllipsisOutlined /></template>
-                  </a-button>
-                  <template #overlay>
-                    <a-menu>
-                      <a-menu-item key="export" @click="exportSession(session)">
-                        <SaveOutlined /> 导出
-                      </a-menu-item>
-                      <a-menu-item key="delete" danger @click="deleteSession(session.id)">
-                        <DeleteOutlined /> 删除
-                      </a-menu-item>
-                    </a-menu>
-                  </template>
-                </a-dropdown>
-
-                <a-button
-                  type="text"
-                  size="small"
-                  @click="toggleSessionExpand(session.id)"
-                >
-                  <template #icon>
-                    <DownOutlined :rotate="expandedSessions.has(session.id) ? 180 : 0" />
-                  </template>
-                </a-button>
+                    style="width: 50px; margin-left: 4px;"
+                  />
+                </div>
               </div>
             </div>
 
-            <!-- 展开详情 -->
-            <div v-show="expandedSessions.has(session.id)" class="session-detail-panel">
-               <a-table
-                :columns="columns"
-                :data-source="session.events.map((e, i) => formatEventForTable(e, i))"
-                :pagination="{ pageSize: 5, size: 'small' }"
-                size="small"
-                :scroll="{ y: 240 }"
-              />
+            <div class="action-btn-area">
+               <button 
+                class="big-action-btn play-btn" 
+                :class="{ 'playing': isPlaying, 'disabled': isRecording || isExecuteDelaying }"
+                v-if="isPlaying"
+                @click="stopPlaying"
+              >
+                 <div class="btn-inner">
+                  <StopFilled />
+                  <span>停止回放</span>
+                </div>
+              </button>
+              <div v-else class="play-placeholder">
+                请在右侧列表选择录制进行回放
+              </div>
             </div>
           </div>
-        </transition-group>
+        </div>
       </div>
-    </a-card>
+
+      <!-- 右侧：列表区域 -->
+      <div class="list-panel glass-panel">
+        <div class="panel-header">
+          <div class="header-left">
+            <FolderOpenOutlined />
+            <span>录制列表</span>
+            <span class="count-badge">{{ recordingSessions.length }}</span>
+          </div>
+          <div class="header-actions">
+            <a-dropdown placement="bottomRight">
+               <a-button type="text" shape="circle">
+                <EllipsisOutlined />
+              </a-button>
+              <template #overlay>
+                <a-menu>
+                  <a-menu-item @click="importSessions" :disabled="isRecording || isPlaying">
+                    <FolderOpenOutlined /> 导入记录
+                  </a-menu-item>
+                  <a-menu-item @click="exportAllSessions" :disabled="recordingSessions.length === 0">
+                    <SaveOutlined /> 导出全部
+                  </a-menu-item>
+                   <a-menu-divider />
+                  <a-menu-item danger @click="clearAllSessions" :disabled="isRecording || isPlaying || recordingSessions.length === 0">
+                    <DeleteOutlined /> 清空列表
+                  </a-menu-item>
+                </a-menu>
+              </template>
+            </a-dropdown>
+          </div>
+        </div>
+
+        <div class="sessions-container custom-scrollbar">
+          <transition-group name="list">
+             <div v-if="recordingSessions.length === 0" class="empty-state" key="empty">
+               <img src="https://gw.alipayobjects.com/zos/antfincdn/ZHrcdLPrvN/empty.svg" alt="empty" />
+               <p>暂无录制记录</p>
+               <span class="sub-text">点击左侧"开始录制"创建新记录</span>
+             </div>
+
+            <div
+              v-for="session in recordingSessions"
+              :key="session.id"
+              class="session-card"
+              :class="{ 'expanded': expandedSessions.has(session.id) }"
+            >
+              <div class="session-main-row">
+                <div class="session-info-group">
+                   <div class="info-top">
+                     <span class="time-tag">{{ formatDate(session.createTime) }}</span>
+                     <span class="duration-tag">{{ formatTime(session.duration) }}</span>
+                     <span class="event-tag">{{ session.eventCount }} 事件</span>
+                   </div>
+                   <div class="info-remark">
+                      <div v-if="editingSessionId === session.id" class="remark-edit-box">
+                        <a-input
+                          v-model:value="editingRemark"
+                          placeholder="输入备注..."
+                          size="small"
+                          @pressEnter="saveRemark(session.id)"
+                          auto-focus
+                        />
+                        <a-button type="text" size="small" class="success-text" @click="saveRemark(session.id)"><CheckOutlined /></a-button>
+                        <a-button type="text" size="small" class="danger-text" @click="cancelEditRemark"><CloseOutlined /></a-button>
+                      </div>
+                      <div v-else class="remark-display" @click.stop="startEditRemark(session)">
+                        <EditOutlined class="edit-icon" />
+                        <span v-if="session.remark" class="text">{{ session.remark }}</span>
+                        <span v-else class="placeholder">添加备注...</span>
+                      </div>
+                   </div>
+                </div>
+
+                <div class="session-action-group">
+                   <a-tooltip title="播放" placement="top">
+                    <button class="icon-btn play" @click="playSession(session)" :disabled="isRecording || isPlaying">
+                      <PlayCircleFilled />
+                    </button>
+                   </a-tooltip>
+                   
+                   <a-dropdown placement="bottomRight" :trigger="['click']">
+                     <button class="icon-btn more"><EllipsisOutlined /></button>
+                     <template #overlay>
+                       <a-menu>
+                         <a-menu-item @click="exportSession(session)"><SaveOutlined /> 导出JSON</a-menu-item>
+                         <a-menu-item danger @click="deleteSession(session.id)"><DeleteOutlined /> 删除记录</a-menu-item>
+                       </a-menu>
+                     </template>
+                   </a-dropdown>
+
+                   <button 
+                    class="icon-btn expand" 
+                    :class="{ 'is-expanded': expandedSessions.has(session.id) }"
+                    @click="toggleSessionExpand(session.id)"
+                  >
+                     <DownOutlined />
+                   </button>
+                </div>
+              </div>
+
+              <div v-if="expandedSessions.has(session.id)" class="session-detail-area">
+                <a-table
+                  :columns="columns"
+                  :data-source="session.events.map((e, i) => formatEventForTable(e, i))"
+                  :pagination="{ pageSize: 5, size: 'small' }"
+                  size="small"
+                  :scroll="{ y: 200 }"
+                  class="mini-table"
+                />
+              </div>
+            </div>
+          </transition-group>
+        </div>
+      </div>
+    </div>
 
     <!-- 首次使用提示弹窗 -->
     <a-modal
       v-model:open="showInstructionModal"
-      title="使用提示"
       :closable="false"
       :maskClosable="false"
-      :keyboard="false"
+      :footer="null"
+      width="360px"
+      class="instruction-modal"
     >
-      <p>录制过程中按 <strong>Ctrl+ESC</strong> 停止录制</p>
-      <p>回放过程中按 <strong>Ctrl+ESC</strong> 停止回放</p>
-      <template #footer>
-        <a-button type="primary" @click="showInstructionModal = false">确定</a-button>
-      </template>
+      <div class="instruction-content">
+        <div class="key-icon">Ctrl + ESC</div>
+        <h3>快捷键提示</h3>
+        <p>无论在录制还是回放过程中</p>
+        <p>按下 <strong>Ctrl + ESC</strong> 即可随时停止</p>
+        <a-button type="primary" shape="round" block @click="showInstructionModal = false" style="margin-top: 20px">
+          我已知晓
+        </a-button>
+      </div>
     </a-modal>
   </div>
 </template>
 
 <style scoped>
+/* 全局容器 */
+.recorder-container {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  background-color: #f0f2f5;
+  gap: 16px;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* 玻璃拟态面板基础样式 */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+}
+
+/* 顶部标题栏 */
 .page-header {
+  padding: 12px 24px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
-  background: #fff;
-  padding: 12px 24px;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  flex-shrink: 0;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header-icon-box {
+  width: 36px;
+  height: 36px;
+  background: linear-gradient(135deg, #1890ff, #36cfc9);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 18px;
+  box-shadow: 0 4px 10px rgba(24, 144, 255, 0.3);
 }
 
 .header-title {
   font-size: 18px;
-  font-weight: 500;
+  font-weight: 600;
+  color: #1f1f1f;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* 状态指示器 */
+.status-indicator {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-.recorder-container {
-  padding-bottom: 24px;
-}
-
-.hover-card {
+  padding: 6px 12px;
+  background: #f5f5f5;
+  border-radius: 20px;
+  font-size: 13px;
+  color: #666;
   transition: all 0.3s;
-  border-radius: 12px;
 }
-.hover-card:hover {
-  box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+
+.status-indicator .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #d9d9d9;
+}
+
+.status-indicator.recording {
+  background: #fff1f0;
+  color: #cf1322;
+  border: 1px solid #ffa39e;
+}
+.status-indicator.recording .dot {
+  background: #f5222d;
+  animation: blink 1s infinite;
+}
+
+.status-indicator.playing {
+  background: #f6ffed;
+  color: #389e0d;
+  border: 1px solid #b7eb8f;
+}
+.status-indicator.playing .dot {
+  background: #52c41a;
+}
+
+.status-indicator.waiting {
+  background: #e6f7ff;
+  color: #096dd9;
+  border: 1px solid #91d5ff;
+}
+.status-indicator.waiting .dot {
+  background: #1890ff;
+}
+
+.time-counter {
+  font-family: 'Monaco', monospace;
+  font-weight: bold;
+}
+
+/* 内容网格布局 */
+.content-grid {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 16px;
+  flex: 1;
+  min-height: 0; /* 允许子元素滚动 */
+}
+
+/* 左侧控制面板 */
+.control-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+}
+
+.panel-card {
+  background: white;
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.03);
+  transition: all 0.3s ease;
+  border: 1px solid transparent;
+}
+
+.panel-card:hover {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+  transform: translateY(-2px);
+}
+
+.panel-card.active {
+  border-color: #1890ff;
+  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1);
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
 }
 
 .card-title {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 16px;
+  font-weight: 600;
+  font-size: 15px;
+  color: #1f1f1f;
 }
 
-.control-content {
-  display: flex;
-  flex-direction: column;
-  height: auto;
-  min-height: 220px;
-}
-
-.status-display-area {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #f7f9fa;
+.icon-wrapper {
+  width: 28px;
+  height: 28px;
   border-radius: 8px;
-  margin-bottom: 16px;
-  position: relative;
-  overflow: hidden;
-  min-height: 120px;
-}
-
-.status-box {
-  text-align: center;
-  width: 100%;
-  height: 100%;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
+  font-size: 14px;
 }
 
-.idle-box .status-icon {
-  font-size: 32px;
-  color: #d9d9d9;
-  margin-bottom: 8px;
-}
-.idle-box .status-label {
-  color: #999;
-}
-
-.countdown-box {
-  background: #1890ff;
-  color: #fff;
-}
-.countdown-box .status-value {
-  font-size: 48px;
-  font-weight: bold;
-}
-
-.recording-box {
+.icon-wrapper.red {
   background: #fff1f0;
-  border: 1px solid #ffccc7;
+  color: #f5222d;
 }
-.recording-box .status-value {
-  font-size: 32px;
-  color: #cf1322;
-  font-weight: bold;
-  font-family: monospace;
+
+.icon-wrapper.green {
+  background: #f6ffed;
+  color: #52c41a;
 }
-.recording-box .pulse-dot {
-  width: 12px;
-  height: 12px;
-  background: #f5222d;
+
+.record-dot {
+  width: 10px;
+  height: 10px;
+  background: currentColor;
   border-radius: 50%;
-  margin-bottom: 8px;
-  animation: pulse 1.5s infinite;
 }
 
-.delay-box {
-  background: #722ed1;
-  color: #fff;
-}
-.delay-box .status-value {
-  font-size: 48px;
-  font-weight: bold;
-}
-
-.action-area {
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.config-row {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 4px;
-  gap: 8px;
-}
-.config-group {
-  display: flex;
-  justify-content: space-between;
-  padding: 0 4px;
-}
-
-.playback-hint {
-  text-align: center;
-  color: #999;
-  font-size: 12px;
-  line-height: 40px; /* match button height */
-  background: #f5f5f5;
-  border-radius: 20px;
-}
-
-.sessions-list {
+.card-body {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-.session-item {
-  background: #fff;
-  border: 1px solid #f0f0f0;
+/* 设置项样式 */
+.setting-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: #f9f9f9;
   border-radius: 8px;
-  transition: all 0.3s;
 }
 
-.session-item:hover {
-  border-color: #1890ff;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-}
-
-.session-main {
-  padding: 12px 16px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.session-header-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 6px;
-}
-
-.session-time {
-  font-weight: 500;
-  color: #262626;
-}
-
-.remark-view {
-  cursor: pointer;
+.value-control {
   display: flex;
   align-items: center;
   gap: 6px;
-  color: #666;
-  font-size: 13px;
-}
-.remark-view:hover {
-  color: #1890ff;
-}
-.remark-text.placeholder {
-  color: #bfbfbf;
-  font-style: italic;
 }
 
-.remark-edit {
+.settings-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.setting-item {
+  background: #fafafa;
+  padding: 10px;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.setting-item.full-width {
+  grid-column: span 2;
+}
+
+.setting-item .label {
+  font-size: 12px;
+  color: #888;
   display: flex;
   align-items: center;
   gap: 4px;
 }
 
-.session-actions {
+.control-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.unit {
+  font-size: 12px;
+  color: #999;
+}
+
+/* 大按钮样式 */
+.action-btn-area {
+  margin-top: 8px;
+}
+
+.big-action-btn {
+  width: 100%;
+  height: 48px;
+  border: none;
+  border-radius: 24px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s;
+  position: relative;
+  overflow: hidden;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.big-action-btn .btn-inner {
+  position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.session-detail-panel {
-  border-top: 1px dashed #f0f0f0;
+.record-btn {
+  background: linear-gradient(135deg, #ff4d4f, #ff7875);
+  box-shadow: 0 4px 15px rgba(255, 77, 79, 0.3);
+}
+
+.record-btn:hover {
+  transform: scale(1.02);
+  box-shadow: 0 6px 20px rgba(255, 77, 79, 0.4);
+}
+
+.record-btn.recording {
+  background: #fff;
+  color: #ff4d4f;
+  border: 2px solid #ff4d4f;
+}
+
+.play-btn {
+  background: linear-gradient(135deg, #52c41a, #95de64);
+  box-shadow: 0 4px 15px rgba(82, 196, 26, 0.3);
+}
+
+.play-btn.playing {
+   background: #fff;
+   color: #52c41a;
+   border: 2px solid #52c41a;
+}
+
+.big-action-btn.disabled {
+  background: #d9d9d9;
+  cursor: not-allowed;
+  box-shadow: none;
+  color: #999;
+}
+
+.play-placeholder {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f5f5f5;
+  border-radius: 24px;
+  color: #999;
+  font-size: 13px;
+  border: 1px dashed #d9d9d9;
+}
+
+/* 脉冲动画 */
+.pulse-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(255, 77, 79, 0.2);
+  animation: ripple 1.5s infinite;
+}
+
+@keyframes ripple {
+  0% { width: 0; height: 0; opacity: 1; }
+  100% { width: 200px; height: 200px; opacity: 0; }
+}
+
+@keyframes blink {
+  50% { opacity: 0.5; }
+}
+
+/* 右侧列表面板 */
+.list-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.panel-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(0,0,0,0.05);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.panel-header .header-left {
+  font-size: 16px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.count-badge {
+  background: #e6f7ff;
+  color: #1890ff;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: normal;
+}
+
+.sessions-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #999;
+  gap: 16px;
+}
+
+.empty-state img {
+  width: 120px;
+  opacity: 0.8;
+}
+
+/* 会话卡片 */
+.session-card {
+  background: white;
+  border-radius: 12px;
+  border: 1px solid #f0f0f0;
+  transition: all 0.2s;
+}
+
+.session-card:hover {
+  border-color: #1890ff;
+  box-shadow: 0 4px 12px rgba(24, 144, 255, 0.1);
+  transform: translateX(4px);
+}
+
+.session-main-row {
   padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.session-info-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.info-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.time-tag {
+  color: #999;
+}
+
+.duration-tag {
+  background: #fff7e6;
+  color: #fa8c16;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.event-tag {
+  background: #f0f5ff;
+  color: #2f54eb;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.info-remark {
+  min-height: 22px;
+  display: flex;
+  align-items: center;
+}
+
+.remark-display {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: #333;
+  font-size: 14px;
+}
+.remark-display:hover .edit-icon {
+  opacity: 1;
+}
+
+.remark-display .placeholder {
+  color: #ccc;
+  font-style: italic;
+  font-size: 13px;
+}
+
+.edit-icon {
+  font-size: 12px;
+  color: #1890ff;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.remark-edit-box {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.success-text { color: #52c41a; }
+.danger-text { color: #ff4d4f; }
+
+.session-action-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.icon-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: #f5f5f5;
+  color: #666;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.icon-btn:hover {
+  background: #e6f7ff;
+  color: #1890ff;
+}
+
+.icon-btn.play {
+  color: #52c41a;
+  background: #f6ffed;
+  width: 36px;
+  height: 36px;
+  font-size: 18px;
+}
+.icon-btn.play:hover {
+  background: #52c41a;
+  color: white;
+  transform: scale(1.1);
+  box-shadow: 0 4px 10px rgba(82, 196, 26, 0.3);
+}
+
+.icon-btn.expand {
+  background: transparent;
+}
+.icon-btn.expand.is-expanded {
+  transform: rotate(180deg);
+}
+
+.session-detail-area {
+  border-top: 1px solid #f0f0f0;
+  padding: 0 16px 16px 16px;
   background: #fafafa;
-  border-radius: 0 0 8px 8px;
+  border-radius: 0 0 12px 12px;
 }
 
-@keyframes pulse {
-  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(245, 34, 45, 0.7); }
-  70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(245, 34, 45, 0); }
-  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(245, 34, 45, 0); }
-}
-
+/* 列表动画 */
 .list-enter-active,
 .list-leave-active {
-  transition: all 0.3s ease;
+  transition: all 0.4s ease;
 }
 .list-enter-from,
 .list-leave-to {
   opacity: 0;
-  transform: translateX(-20px);
+  transform: translateY(20px);
+}
+
+/* 弹窗样式 */
+.instruction-content {
+  text-align: center;
+  padding: 10px 0;
+}
+
+.key-icon {
+  background: #f5f5f5;
+  border: 2px solid #e8e8e8;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-family: monospace;
+  font-weight: bold;
+  font-size: 18px;
+  color: #333;
+  display: inline-block;
+  margin-bottom: 16px;
+  box-shadow: 0 4px 0 #e8e8e8;
+}
+
+/* 滚动条美化 */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #e8e8e8;
+  border-radius: 3px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #d9d9d9;
 }
 </style>

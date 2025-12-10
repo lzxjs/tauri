@@ -29,3 +29,5 @@ reqwest = { version = "0.11", features = ["blocking"] }
 scraper = "0.20"
 tokio = { version = "1", features = ["full"] }
 tauri-plugin-autostart = "2.5.1"
+rdev = "0.5"
+parking_lot = "0.12"

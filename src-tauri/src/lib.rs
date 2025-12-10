@@ -1,3 +1,12 @@
+mod recorder;
+mod player;
+mod monitor;
+
+use recorder::{Recorder, RecordedEvent};
+use player::Player;
+use monitor::start_monitor;
+use std::sync::Arc;
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use sysinfo::{System, Disks};
 use scraper::{Html, Selector};
@@ -49,6 +58,13 @@ struct ScrapeResult {
     success: bool,
     data: Vec<ScrapedElement>,
     error: Option<String>,
+}
+
+// 录制器应用状态
+pub struct RecorderState {
+    recorder: Arc<Mutex<Recorder>>,
+    player: Arc<Mutex<Player>>,
+    events: Arc<Mutex<Vec<RecordedEvent>>>,
 }
 
 #[tauri::command]
@@ -229,10 +245,104 @@ fn scrape_page(url: String, selector: String) -> ScrapeResult {
     }
 }
 
+// ========== 录制器相关命令 ==========
+
+#[tauri::command]
+fn start_record(state: tauri::State<RecorderState>) -> Result<String, String> {
+    let mut recorder = state.recorder.lock();
+    if recorder.is_recording() {
+        return Err("已经在录制中".to_string());
+    }
+    recorder.start_recording();
+    Ok("开始录制".to_string())
+}
+
+#[tauri::command]
+fn stop_record(state: tauri::State<RecorderState>) -> Result<Vec<RecordedEvent>, String> {
+    let mut recorder = state.recorder.lock();
+    if !recorder.is_recording() {
+        return Err("当前没有在录制".to_string());
+    }
+    let events = recorder.stop_recording();
+    *state.events.lock() = events.clone();
+    Ok(events)
+}
+
+#[tauri::command]
+fn play_record(state: tauri::State<RecorderState>, repeat_count: u32) -> Result<String, String> {
+    let events = state.events.lock().clone();
+    if events.is_empty() {
+        return Err("没有可回放的事件".to_string());
+    }
+
+    let player = state.player.lock();
+    player.play_events(events, repeat_count)?;
+    Ok("开始回放".to_string())
+}
+
+#[tauri::command]
+fn stop_play(state: tauri::State<RecorderState>) -> Result<String, String> {
+    let player = state.player.lock();
+    player.stop_playing();
+    Ok("停止回放".to_string())
+}
+
+#[tauri::command]
+fn get_recorder_status(state: tauri::State<RecorderState>) -> Result<serde_json::Value, String> {
+    let recorder = state.recorder.lock();
+    let player = state.player.lock();
+    let events = state.events.lock();
+
+    Ok(serde_json::json!({
+        "is_recording": recorder.is_recording(),
+        "is_playing": player.is_playing(),
+        "event_count": events.len()
+    }))
+}
+
+#[tauri::command]
+fn get_recorded_events(state: tauri::State<RecorderState>) -> Result<Vec<RecordedEvent>, String> {
+    let recorder = state.recorder.lock();
+    let recorder_events = recorder.get_events();
+
+    if !recorder_events.is_empty() {
+        Ok(recorder_events)
+    } else {
+        Ok(state.events.lock().clone())
+    }
+}
+
+#[tauri::command]
+fn clear_recorded_events(state: tauri::State<RecorderState>) -> Result<String, String> {
+    state.events.lock().clear();
+    Ok("事件已清空".to_string())
+}
+
+#[tauri::command]
+fn set_recorded_events(state: tauri::State<RecorderState>, events: Vec<RecordedEvent>) -> Result<String, String> {
+    *state.events.lock() = events;
+    Ok("事件已设置".to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+  // 初始化录制器状态
+  let recorder = Arc::new(Mutex::new(Recorder::new()));
+  let player = Arc::new(Mutex::new(Player::new()));
+  let events = Arc::new(Mutex::new(Vec::new()));
+
+  let recorder_state = RecorderState {
+      recorder: Arc::clone(&recorder),
+      player: Arc::clone(&player),
+      events: Arc::clone(&events),
+  };
+
+  // 启动全局输入监控
+  start_monitor(Arc::clone(&recorder), Arc::clone(&player));
+
   tauri::Builder::default()
     .plugin(tauri_plugin_store::Builder::default().build())
+    .manage(recorder_state)
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(
@@ -260,7 +370,15 @@ pub fn run() {
       parse_html_by_selector,
       scrape_page,
       launch_app,
-      open_app_folder
+      open_app_folder,
+      start_record,
+      stop_record,
+      play_record,
+      stop_play,
+      get_recorder_status,
+      get_recorded_events,
+      clear_recorded_events,
+      set_recorded_events
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

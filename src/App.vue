@@ -83,6 +83,7 @@ onMounted(() => {
             <a-menu-item key="launcher">应用批量启动器</a-menu-item>
             <a-menu-item key="system">系统与硬件信息</a-menu-item>
             <a-menu-item key="scraper">网页爬虫</a-menu-item>
+            <a-menu-item key="recorder">键鼠录制回放</a-menu-item>
           </a-menu>
         </a-layout-sider>
 

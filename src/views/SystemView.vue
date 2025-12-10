@@ -68,128 +68,167 @@ onUnmounted(() => {
 
 <template>
   <div class="system-view">
-    <a-row :gutter="[16, 16]">
+    <a-row :gutter="[24, 24]">
       <!-- 系统信息卡片 -->
       <a-col :xs="24" :lg="12">
-        <a-card title="系统信息" :bordered="false" class="info-card">
-          <template #extra>
-            <CloudServerOutlined style="font-size: 24px; color: #1890ff" />
-          </template>
-          <a-skeleton active :loading="loading" :paragraph="{ rows: 4 }">
-            <a-descriptions :column="1" v-if="systemInfo" size="small" bordered>
-              <a-descriptions-item label="操作系统">
-                {{ systemInfo.os_name }}
-              </a-descriptions-item>
-              <a-descriptions-item label="系统版本">
-                {{ systemInfo.os_version }}
-              </a-descriptions-item>
-              <a-descriptions-item label="内核版本">
-                {{ systemInfo.kernel_version }}
-              </a-descriptions-item>
-              <a-descriptions-item label="主机名">
-                {{ systemInfo.hostname }}
-              </a-descriptions-item>
-              <a-descriptions-item label="架构">
-                {{ systemInfo.architecture }}
-              </a-descriptions-item>
-            </a-descriptions>
-          </a-skeleton>
-        </a-card>
+        <div class="card-wrapper">
+          <div class="card-header system-header">
+            <div class="icon-box">
+              <CloudServerOutlined />
+            </div>
+            <span class="card-title">系统信息</span>
+          </div>
+          <a-card :bordered="false" class="info-card custom-card">
+            <a-skeleton active :loading="loading" :paragraph="{ rows: 4 }">
+              <div v-if="systemInfo" class="detail-list">
+                <div class="detail-item">
+                  <span class="detail-label">操作系统</span>
+                  <span class="detail-value">{{ systemInfo.os_name }}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="detail-label">系统版本</span>
+                  <span class="detail-value">{{ systemInfo.os_version }}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="detail-label">内核版本</span>
+                  <span class="detail-value badge">{{ systemInfo.kernel_version }}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="detail-label">主机名</span>
+                  <span class="detail-value">{{ systemInfo.hostname }}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="detail-label">架构</span>
+                  <span class="detail-value badge-blue">{{ systemInfo.architecture }}</span>
+                </div>
+              </div>
+            </a-skeleton>
+          </a-card>
+        </div>
       </a-col>
 
       <!-- CPU 信息卡片 -->
       <a-col :xs="24" :lg="12">
-        <a-card title="CPU 信息" :bordered="false" class="info-card">
-          <template #extra>
-            <DatabaseOutlined style="font-size: 24px; color: #52c41a" />
-          </template>
-          <a-skeleton active :loading="loading" :paragraph="{ rows: 2 }">
-            <div v-if="cpuInfo" class="cpu-info">
-              <div class="info-item">
-                <span class="label">CPU 品牌</span>
-                <span class="value">{{ cpuInfo.cpu_brand }}</span>
-              </div>
-              <div class="stat-row">
-                <a-statistic title="核心数" :value="cpuInfo.cpu_count" suffix="核" />
-                <a-statistic title="频率" :value="cpuInfo.cpu_frequency" suffix="MHz" />
-              </div>
+        <div class="card-wrapper">
+          <div class="card-header cpu-header">
+            <div class="icon-box">
+              <DatabaseOutlined />
             </div>
-          </a-skeleton>
-        </a-card>
+            <span class="card-title">CPU 状态</span>
+          </div>
+          <a-card :bordered="false" class="info-card custom-card">
+            <a-skeleton active :loading="loading" :paragraph="{ rows: 2 }">
+              <div v-if="cpuInfo" class="cpu-info">
+                <div class="cpu-brand-box">
+                  <span class="label">处理器</span>
+                  <span class="value">{{ cpuInfo.cpu_brand }}</span>
+                </div>
+                <div class="stat-grid">
+                  <div class="stat-box">
+                    <span class="stat-label">核心数</span>
+                    <span class="stat-value">{{ cpuInfo.cpu_count }} <small>核</small></span>
+                  </div>
+                  <div class="stat-box">
+                    <span class="stat-label">频率</span>
+                    <span class="stat-value">{{ cpuInfo.cpu_frequency }} <small>MHz</small></span>
+                  </div>
+                </div>
+              </div>
+            </a-skeleton>
+          </a-card>
+        </div>
       </a-col>
 
       <!-- 内存信息卡片 -->
       <a-col :xs="24" :lg="12">
-        <a-card title="内存信息" :bordered="false" class="info-card">
-          <template #extra>
-            <HddOutlined style="font-size: 24px; color: #fa8c16" />
-          </template>
-          <a-skeleton active :loading="loading" :paragraph="{ rows: 4 }">
-            <div v-if="memoryInfo">
-              <a-row :gutter="16">
-                <a-col :span="12">
-                  <a-statistic
-                    title="已用内存"
-                    :value="formatBytes(memoryInfo.used_memory)"
-                    :value-style="{ color: memoryInfo.used_memory / memoryInfo.total_memory > 0.8 ? '#cf1322' : '#3f8600' }"
-                  />
-                </a-col>
-                <a-col :span="12">
-                  <a-statistic
-                    title="总内存"
-                    :value="formatBytes(memoryInfo.total_memory)"
-                  />
-                </a-col>
-              </a-row>
-              <div class="progress-section">
-                <div class="progress-info">
-                  <span>使用率</span>
-                  <span>{{ ((memoryInfo.used_memory / memoryInfo.total_memory) * 100).toFixed(1) }}%</span>
-                </div>
-                <a-progress
-                  :percent="Number(((memoryInfo.used_memory / memoryInfo.total_memory) * 100).toFixed(1))"
-                  :status="memoryInfo.used_memory / memoryInfo.total_memory > 0.8 ? 'exception' : 'active'"
-                  :show-info="false"
-                  :stroke-width="12"
-                />
-              </div>
-              <div class="sub-stats">
-                 <span>可用: {{ formatBytes(memoryInfo.available_memory) }}</span>
-              </div>
+        <div class="card-wrapper">
+          <div class="card-header mem-header">
+             <div class="icon-box">
+              <HddOutlined />
             </div>
-          </a-skeleton>
-        </a-card>
+            <span class="card-title">内存使用</span>
+          </div>
+          <a-card :bordered="false" class="info-card custom-card">
+            <a-skeleton active :loading="loading" :paragraph="{ rows: 4 }">
+              <div v-if="memoryInfo" class="memory-container">
+                <div class="mem-circle-wrapper">
+                  <a-progress
+                    type="circle"
+                    :percent="Number(((memoryInfo.used_memory / memoryInfo.total_memory) * 100).toFixed(1))"
+                    :stroke-color="{ '0%': '#4facfe', '100%': '#00f2fe' }"
+                    :stroke-width="10"
+                    :width="120"
+                  >
+                    <template #format="percent">
+                      <span class="circle-text">{{ percent }}%</span>
+                      <span class="circle-sub">使用率</span>
+                    </template>
+                  </a-progress>
+                </div>
+                
+                <div class="mem-details">
+                  <div class="mem-stat-row">
+                    <span class="mem-dot used"></span>
+                    <span class="mem-label">已用</span>
+                    <span class="mem-val">{{ formatBytes(memoryInfo.used_memory) }}</span>
+                  </div>
+                   <div class="mem-stat-row">
+                    <span class="mem-dot free"></span>
+                    <span class="mem-label">可用</span>
+                    <span class="mem-val">{{ formatBytes(memoryInfo.available_memory) }}</span>
+                  </div>
+                  <div class="mem-stat-row total">
+                    <span class="mem-label">总量</span>
+                    <span class="mem-val">{{ formatBytes(memoryInfo.total_memory) }}</span>
+                  </div>
+                </div>
+              </div>
+            </a-skeleton>
+          </a-card>
+        </div>
       </a-col>
 
       <!-- 磁盘信息卡片 -->
       <a-col :xs="24" :lg="12">
-        <a-card title="磁盘信息" :bordered="false" class="info-card">
-          <template #extra>
-            <HddOutlined style="font-size: 24px; color: #722ed1" />
-          </template>
-          <a-skeleton active :loading="loading" :paragraph="{ rows: 4 }">
-            <div v-if="diskInfo.length > 0" class="disk-list">
-              <div
-                v-for="(disk, index) in diskInfo"
-                :key="index"
-                class="disk-item"
-              >
-                <div class="disk-header">
-                  <span class="disk-name">{{ disk.name || '本地磁盘' }} ({{ disk.mount_point }})</span>
-                  <span class="disk-usage">
-                     {{ formatBytes(disk.total_space - disk.available_space) }} / {{ formatBytes(disk.total_space) }}
-                  </span>
-                </div>
-                <a-progress
-                  :percent="Number(((1 - disk.available_space / disk.total_space) * 100).toFixed(1))"
-                  :status="(1 - disk.available_space / disk.total_space) > 0.8 ? 'exception' : 'active'"
-                  :stroke-width="10"
-                />
-              </div>
+        <div class="card-wrapper">
+          <div class="card-header disk-header-bg">
+            <div class="icon-box">
+              <CloudServerOutlined />
             </div>
-            <a-empty v-else description="未检测到磁盘" />
-          </a-skeleton>
-        </a-card>
+            <span class="card-title">磁盘存储</span>
+          </div>
+          <a-card :bordered="false" class="info-card custom-card">
+            <a-skeleton active :loading="loading" :paragraph="{ rows: 4 }">
+              <div v-if="diskInfo.length > 0" class="disk-list">
+                <div
+                  v-for="(disk, index) in diskInfo"
+                  :key="index"
+                  class="disk-item"
+                >
+                  <div class="disk-icon">
+                    <HddOutlined />
+                  </div>
+                  <div class="disk-content">
+                    <div class="disk-top">
+                      <span class="disk-name">{{ disk.name || '本地磁盘' }} <span class="mount-point">({{ disk.mount_point }})</span></span>
+                      <span class="disk-usage-text">
+                        {{ formatBytes(disk.total_space - disk.available_space) }} / {{ formatBytes(disk.total_space) }}
+                      </span>
+                    </div>
+                    <a-progress
+                      :percent="Number(((1 - disk.available_space / disk.total_space) * 100).toFixed(1))"
+                      :stroke-color="{ '0%': '#87d068', '100%': '#108ee9' }"
+                      :show-info="false"
+                      :stroke-width="8"
+                      class="disk-progress"
+                    />
+                  </div>
+                </div>
+              </div>
+              <a-empty v-else description="未检测到磁盘" />
+            </a-skeleton>
+          </a-card>
+        </div>
       </a-col>
     </a-row>
   </div>
@@ -200,91 +239,299 @@ onUnmounted(() => {
   padding-bottom: 20px;
 }
 
-.info-card {
+.card-wrapper {
   height: 100%;
   display: flex;
   flex-direction: column;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: var(--box-shadow);
+  overflow: hidden;
+  transition: transform 0.3s ease;
+}
+
+.card-wrapper:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--box-shadow-hover);
+}
+
+.card-header {
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #f8fafc;
+  border-bottom: 1px solid rgba(0,0,0,0.03);
+}
+
+.system-header .icon-box { color: #4facfe; background: rgba(79, 172, 254, 0.1); }
+.cpu-header .icon-box { color: #43e97b; background: rgba(67, 233, 123, 0.1); }
+.mem-header .icon-box { color: #fa709a; background: rgba(250, 112, 154, 0.1); }
+.disk-header-bg .icon-box { color: #a18cd1; background: rgba(161, 140, 209, 0.1); }
+
+.icon-box {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+}
+
+.card-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.custom-card {
+  flex: 1;
+  background: transparent !important;
+  box-shadow: none !important;
 }
 
 :deep(.ant-card-body) {
-  flex: 1;
+  padding: 20px !important;
 }
 
-.cpu-info {
+/* System Info Detail List */
+.detail-list {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
 }
 
-.info-item {
+.detail-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 0;
-  border-bottom: 1px solid #f0f0f0;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed rgba(0,0,0,0.05);
 }
 
-.info-item .label {
-  color: #8c8c8c;
+.detail-item:last-child {
+  border-bottom: none;
 }
 
-.info-item .value {
+.detail-label {
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.detail-value {
   font-weight: 500;
+  color: var(--text-primary);
 }
 
-.stat-row {
-  display: flex;
-  justify-content: space-around;
-  background: #fafafa;
-  padding: 16px;
+.badge {
+  background: #f1f5f9;
+  padding: 2px 8px;
   border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
 }
 
-.progress-section {
-  margin-top: 16px;
+.badge-blue {
+  background: rgba(79, 172, 254, 0.1);
+  color: #4facfe;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 12px;
 }
 
-.progress-info {
+/* CPU Info */
+.cpu-info {
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.cpu-brand-box {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cpu-brand-box .label {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.cpu-brand-box .value {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.stat-box {
+  background: #f8fafc;
+  padding: 12px;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: var(--text-secondary);
   margin-bottom: 4px;
-  font-size: 12px;
-  color: #666;
 }
 
-.sub-stats {
+.stat-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--primary-color);
+}
+
+.stat-value small {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-tertiary);
+}
+
+/* Memory Info */
+.memory-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.mem-circle-wrapper {
+  flex-shrink: 0;
+}
+
+:deep(.ant-progress-circle-path) {
+  stroke-linecap: round;
+}
+
+.circle-text {
+  display: block;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.circle-sub {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.mem-details {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mem-stat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+}
+
+.mem-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 8px;
+}
+
+.mem-dot.used { background: #4facfe; }
+.mem-dot.free { background: #e2e8f0; }
+
+.mem-label {
+  flex: 1;
+  color: var(--text-secondary);
+}
+
+.mem-val {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.mem-stat-row.total {
   margin-top: 8px;
-  text-align: right;
-  font-size: 12px;
-  color: #8c8c8c;
+  padding-top: 8px;
+  border-top: 1px solid #f1f5f9;
 }
 
+/* Disk Info */
 .disk-list {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  max-height: 300px;
+  max-height: 280px;
   overflow-y: auto;
+  padding-right: 4px;
 }
 
 .disk-item {
-  background: #fafafa;
-  padding: 12px;
-  border-radius: 6px;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
 }
 
-.disk-header {
+.disk-icon {
+  width: 36px;
+  height: 36px;
+  background: #f8fafc;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #a18cd1;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.disk-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.disk-top {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 8px;
-  font-size: 13px;
+  align-items: center;
 }
 
 .disk-name {
-  font-weight: 500;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-primary);
 }
 
-.disk-usage {
-  color: #8c8c8c;
+.mount-point {
+  color: var(--text-tertiary);
+  font-weight: 400;
+  font-size: 12px;
+}
+
+.disk-usage-text {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.disk-progress {
+  line-height: 1;
+}
+
+:deep(.ant-progress-inner) {
+  background-color: #f1f5f9;
 }
 </style>

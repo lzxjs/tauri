@@ -80,57 +80,64 @@ onMounted(() => {
 <template>
   <div class="container">
     <a-layout style="min-height: 100vh">
-      <a-layout-sider width="240" class="sider" theme="light">
+      <a-layout-sider width="260" class="sider" theme="light">
         <div class="brand">
           <div class="logo-box">
             <span class="logo-icon">🍅</span>
           </div>
-          <h1>小茄的工具箱</h1>
+          <div class="brand-text">
+            <h1>小茄工具箱</h1>
+            <span class="version">v1.0.0</span>
+          </div>
         </div>
         
-        <a-menu
-          :selectedKeys="[activeMenu]"
-          mode="inline"
-          @click="handleMenuClick"
-          class="custom-menu"
-        >
-          <a-menu-item key="launcher">
-            <span class="menu-icon">🚀</span>
-            <span>应用批量启动器</span>
-          </a-menu-item>
-          <a-menu-item key="system">
-            <span class="menu-icon">🖥️</span>
-            <span>系统与硬件信息</span>
-          </a-menu-item>
-          <a-menu-item key="scraper">
-            <span class="menu-icon">🕷️</span>
-            <span>网页爬虫</span>
-          </a-menu-item>
-          <a-menu-item key="recorder">
-            <span class="menu-icon">⏺️</span>
-            <span>键鼠录制回放</span>
-          </a-menu-item>
-        </a-menu>
+        <div class="menu-container">
+          <a-menu
+            :selectedKeys="[activeMenu]"
+            mode="inline"
+            @click="handleMenuClick"
+            class="custom-menu"
+          >
+            <a-menu-item key="launcher">
+              <span class="menu-icon-wrapper">🚀</span>
+              <span class="menu-text">应用启动</span>
+            </a-menu-item>
+            <a-menu-item key="system">
+              <span class="menu-icon-wrapper">🖥️</span>
+              <span class="menu-text">系统监控</span>
+            </a-menu-item>
+            <a-menu-item key="scraper">
+              <span class="menu-icon-wrapper">🕷️</span>
+              <span class="menu-text">网页爬虫</span>
+            </a-menu-item>
+            <a-menu-item key="recorder">
+              <span class="menu-icon-wrapper">⏺️</span>
+              <span class="menu-text">动作录制</span>
+            </a-menu-item>
+          </a-menu>
+        </div>
 
         <div class="sider-footer">
-           <div class="autostart-control">
-             <span class="autostart-label">开机启动</span>
+           <div class="autostart-card">
+             <div class="autostart-info">
+               <span class="autostart-title">开机启动</span>
+               <span class="autostart-desc">随系统自动运行</span>
+             </div>
              <a-switch
                v-model:checked="autostartEnabled"
                :loading="autostartLoading"
                @change="toggleAutostart"
-               size="small"
+               class="custom-switch"
              />
            </div>
         </div>
       </a-layout-sider>
 
-      <a-layout>
-        <!-- 移除顶部 Header，让界面更清爽，功能收入左侧或内容区顶部 -->
+      <a-layout class="main-layout">
         <a-layout-content class="content-wrapper">
-          <div class="content">
+          <div class="content-container">
             <router-view v-slot="{ Component }">
-              <transition name="fade" mode="out-in">
+              <transition name="fade-slide" mode="out-in">
                 <component :is="Component" :key="route.name" />
               </transition>
             </router-view>
@@ -149,34 +156,53 @@ onMounted(() => {
 }
 
 .sider {
-  z-index: 10;
-  background: var(--surface-color) !important;
-  border-right: 1px solid rgba(0,0,0,0.03);
+  z-index: 20;
+  background: rgba(255, 255, 255, 0.8) !important;
+  backdrop-filter: blur(20px);
+  border-right: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 20px 0 40px rgba(0, 0, 0, 0.02);
+  display: flex;
+  flex-direction: column;
+}
+
+:deep(.ant-layout-sider-children) {
   display: flex;
   flex-direction: column;
 }
 
 .brand {
-  height: 80px;
+  height: 100px;
   display: flex;
   align-items: center;
-  padding: 0 24px;
-  gap: 12px;
+  padding: 0 28px;
+  gap: 16px;
 }
 
 .logo-box {
-  width: 36px;
-  height: 36px;
-  background: linear-gradient(135deg, #ff9a9e 0%, #fad0c4 99%, #fad0c4 100%);
-  border-radius: 10px;
+  width: 42px;
+  height: 42px;
+  background: linear-gradient(135deg, #FF9A9E 0%, #FECFEF 100%);
+  border-radius: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 10px rgba(255, 154, 158, 0.3);
+  box-shadow: 0 8px 16px rgba(255, 154, 158, 0.25);
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.brand:hover .logo-box {
+  transform: scale(1.05) rotate(5deg);
 }
 
 .logo-icon {
-  font-size: 20px;
+  font-size: 22px;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+}
+
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .brand h1 {
@@ -184,98 +210,169 @@ onMounted(() => {
   font-size: 18px;
   font-weight: 700;
   color: var(--text-primary);
-  letter-spacing: 0.5px;
+  letter-spacing: -0.5px;
+  line-height: 1.2;
+}
+
+.version {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-weight: 500;
+  background: rgba(0,0,0,0.03);
+  padding: 2px 6px;
+  border-radius: 6px;
+  align-self: flex-start;
+}
+
+.menu-container {
+  flex: 1;
+  padding: 10px 16px;
+  overflow-y: auto;
 }
 
 .custom-menu {
   border-right: none !important;
   background: transparent !important;
-  padding: 0 12px;
-  flex: 1;
 }
 
 /* 覆盖 Ant Design Menu 样式 */
 :deep(.ant-menu-item) {
-  border-radius: 8px;
+  border-radius: 12px;
   margin-bottom: 8px !important;
   color: var(--text-secondary);
-  transition: all 0.3s ease;
-  height: 48px !important;
-  line-height: 48px !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  height: 52px !important;
+  line-height: 52px !important;
+  padding-left: 16px !important;
+  position: relative;
+  overflow: hidden;
 }
 
 :deep(.ant-menu-item:hover) {
   color: var(--primary-color) !important;
-  background: rgba(92, 124, 250, 0.05) !important;
+  background: var(--surface-hover) !important;
 }
 
 :deep(.ant-menu-item-selected) {
-  background: var(--primary-color) !important;
+  background: var(--primary-gradient) !important;
   color: #fff !important;
-  box-shadow: 0 4px 12px rgba(92, 124, 250, 0.3);
-  font-weight: 500;
+  box-shadow: 0 8px 20px rgba(79, 172, 254, 0.3);
+  font-weight: 600;
 }
 
-.menu-icon {
-  margin-right: 10px;
+.menu-icon-wrapper {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  margin-right: 12px;
   font-size: 18px;
+  transition: transform 0.3s ease;
+}
+
+:deep(.ant-menu-item-selected) .menu-icon-wrapper {
+  transform: scale(1.1);
+}
+
+.menu-text {
+  font-size: 14px;
 }
 
 .sider-footer {
   padding: 24px;
-  border-top: 1px solid rgba(0,0,0,0.03);
 }
 
-.autostart-control {
+.autostart-card {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
-  background: #f8f9fa;
-  border-radius: 8px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
+  transition: all 0.3s ease;
 }
 
-.autostart-label {
+.autostart-card:hover {
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
+  transform: translateY(-2px);
+}
+
+.autostart-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.autostart-title {
   font-size: 13px;
-  color: var(--text-secondary);
-  font-weight: 500;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.autostart-desc {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.custom-switch {
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+}
+
+:deep(.ant-switch-checked) {
+  background: var(--primary-gradient) !important;
+}
+
+.main-layout {
+  background: transparent;
 }
 
 .content-wrapper {
-  padding: 24px;
-  background: var(--bg-color);
+  padding: 24px 32px;
   height: 100vh;
   overflow: hidden;
 }
 
-.content {
+.content-container {
   height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
-  padding-right: 4px; /* 防止滚动条遮挡内容 */
+  padding-right: 8px;
+  padding-bottom: 24px;
 }
 
-/* Custom Scrollbar for content */
-.content::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-.content::-webkit-scrollbar-thumb {
-  background: #ccc;
-  border-radius: 3px;
-}
-.content::-webkit-scrollbar-track {
-  background: transparent;
+/* 路由切换动画 - 滑动渐变 */
+.fade-slide-enter-active,
+.fade-slide-leave-active {
+  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
+.fade-slide-enter-from {
+  opacity: 0;
+  transform: translateY(20px) scale(0.98);
+}
+
+.fade-slide-leave-to {
+  opacity: 0;
+  transform: translateY(-20px) scale(0.98);
+}
+
+/* Ant Design Card 全局覆盖 */
 :deep(.ant-card) {
-  border-radius: 8px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
-  transition: all 0.3s;
+  border-radius: var(--border-radius);
+  border: none;
+  box-shadow: var(--box-shadow);
+  transition: var(--transition);
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(10px);
 }
 
 :deep(.ant-card:hover) {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--box-shadow-hover);
+  transform: translateY(-4px);
+  background: #fff;
 }
 
 /* 路由切换动画 */

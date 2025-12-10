@@ -80,39 +80,53 @@ onMounted(() => {
 <template>
   <div class="container">
     <a-layout style="min-height: 100vh">
-      <a-layout-header class="header">
+      <a-layout-sider width="240" class="sider" theme="light">
         <div class="brand">
-          <span class="logo-icon">🍅</span>
+          <div class="logo-box">
+            <span class="logo-icon">🍅</span>
+          </div>
           <h1>小茄的工具箱</h1>
         </div>
-        <div class="header-actions">
-          <a-space>
-            <span class="autostart-label">开机启动</span>
-            <a-switch
-              v-model:checked="autostartEnabled"
-              :loading="autostartLoading"
-              @change="toggleAutostart"
-              size="small"
-            />
-          </a-space>
+        
+        <a-menu
+          :selectedKeys="[activeMenu]"
+          mode="inline"
+          @click="handleMenuClick"
+          class="custom-menu"
+        >
+          <a-menu-item key="launcher">
+            <span class="menu-icon">🚀</span>
+            <span>应用批量启动器</span>
+          </a-menu-item>
+          <a-menu-item key="system">
+            <span class="menu-icon">🖥️</span>
+            <span>系统与硬件信息</span>
+          </a-menu-item>
+          <a-menu-item key="scraper">
+            <span class="menu-icon">🕷️</span>
+            <span>网页爬虫</span>
+          </a-menu-item>
+          <a-menu-item key="recorder">
+            <span class="menu-icon">⏺️</span>
+            <span>键鼠录制回放</span>
+          </a-menu-item>
+        </a-menu>
+
+        <div class="sider-footer">
+           <div class="autostart-control">
+             <span class="autostart-label">开机启动</span>
+             <a-switch
+               v-model:checked="autostartEnabled"
+               :loading="autostartLoading"
+               @change="toggleAutostart"
+               size="small"
+             />
+           </div>
         </div>
-      </a-layout-header>
+      </a-layout-sider>
 
       <a-layout>
-        <a-layout-sider width="220" class="sider" theme="light">
-          <a-menu
-            :selectedKeys="[activeMenu]"
-            mode="inline"
-            @click="handleMenuClick"
-            style="height: 100%; border-right: 0"
-          >
-            <a-menu-item key="launcher">应用批量启动器</a-menu-item>
-            <a-menu-item key="system">系统与硬件信息</a-menu-item>
-            <a-menu-item key="scraper">网页爬虫</a-menu-item>
-            <a-menu-item key="recorder">键鼠录制回放</a-menu-item>
-          </a-menu>
-        </a-layout-sider>
-
+        <!-- 移除顶部 Header，让界面更清爽，功能收入左侧或内容区顶部 -->
         <a-layout-content class="content-wrapper">
           <div class="content">
             <router-view v-slot="{ Component }">
@@ -131,57 +145,106 @@ onMounted(() => {
 .container {
   height: 100vh;
   overflow: hidden;
-}
-
-.header {
-  background: #fff;
-  padding: 0 24px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  box-shadow: 0 1px 4px rgba(0, 21, 41, 0.08);
-  z-index: 10;
-  height: 64px;
-  line-height: 64px;
-}
-
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.logo-icon {
-  font-size: 24px;
-}
-
-.header h1 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-  color: #1f1f1f;
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-}
-
-.autostart-label {
-  font-size: 14px;
-  color: #666;
-  user-select: none;
+  background: var(--bg-color);
 }
 
 .sider {
-  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.05);
-  z-index: 5;
+  z-index: 10;
+  background: var(--surface-color) !important;
+  border-right: 1px solid rgba(0,0,0,0.03);
+  display: flex;
+  flex-direction: column;
+}
+
+.brand {
+  height: 80px;
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  gap: 12px;
+}
+
+.logo-box {
+  width: 36px;
+  height: 36px;
+  background: linear-gradient(135deg, #ff9a9e 0%, #fad0c4 99%, #fad0c4 100%);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 10px rgba(255, 154, 158, 0.3);
+}
+
+.logo-icon {
+  font-size: 20px;
+}
+
+.brand h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: 0.5px;
+}
+
+.custom-menu {
+  border-right: none !important;
+  background: transparent !important;
+  padding: 0 12px;
+  flex: 1;
+}
+
+/* 覆盖 Ant Design Menu 样式 */
+:deep(.ant-menu-item) {
+  border-radius: 8px;
+  margin-bottom: 8px !important;
+  color: var(--text-secondary);
+  transition: all 0.3s ease;
+  height: 48px !important;
+  line-height: 48px !important;
+}
+
+:deep(.ant-menu-item:hover) {
+  color: var(--primary-color) !important;
+  background: rgba(92, 124, 250, 0.05) !important;
+}
+
+:deep(.ant-menu-item-selected) {
+  background: var(--primary-color) !important;
+  color: #fff !important;
+  box-shadow: 0 4px 12px rgba(92, 124, 250, 0.3);
+  font-weight: 500;
+}
+
+.menu-icon {
+  margin-right: 10px;
+  font-size: 18px;
+}
+
+.sider-footer {
+  padding: 24px;
+  border-top: 1px solid rgba(0,0,0,0.03);
+}
+
+.autostart-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: #f8f9fa;
+  border-radius: 8px;
+}
+
+.autostart-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-weight: 500;
 }
 
 .content-wrapper {
-  padding: 16px;
-  background: #f0f2f5;
-  height: calc(100vh - 64px);
+  padding: 24px;
+  background: var(--bg-color);
+  height: 100vh;
   overflow: hidden;
 }
 
@@ -189,10 +252,7 @@ onMounted(() => {
   height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
-  /* background: #fff; */
-  /* border-radius: 8px; */
-  /* padding: 24px; */
-  /* box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03); */
+  padding-right: 4px; /* 防止滚动条遮挡内容 */
 }
 
 /* Custom Scrollbar for content */

@@ -1,11 +1,15 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from "vue";
+import { ref, onMounted, onUnmounted, computed } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { message } from "ant-design-vue";
+import { Store } from "@tauri-apps/plugin-store";
 import {
   DatabaseOutlined,
   HddOutlined,
   CloudServerOutlined,
+  WifiOutlined,
+  ArrowUpOutlined,
+  ArrowDownOutlined,
 } from "@ant-design/icons-vue";
 
 const loading = ref(true);
@@ -13,7 +17,46 @@ const systemInfo = ref(null);
 const cpuInfo = ref(null);
 const memoryInfo = ref(null);
 const diskInfo = ref([]);
+const networkInfo = ref([]);
+
+// 上一次的网络数据，用于计算速度
+const lastNetworkData = ref(null);
+
+// 当前网络速度（字节/秒）
+const currentNetworkSpeed = ref({ upload: 0, download: 0 });
+
+// 七日网络流量统计（按日期存储每日的上传和下载总量）
+const sevenDayTraffic = ref({});
+
+// 当前选中的日期索引（0=今天，1=昨天，...，6=6天前）
+const selectedDayIndex = ref(0);
+
+// 创建 Store 实例用于持久化存储七日流量数据
+const trafficStore = new Store("traffic-store.json");
+
 let timer = null;
+
+// 获取指定天数前的日期字符串
+const getDateString = (daysAgo) => {
+  const date = new Date();
+  date.setDate(date.getDate() - daysAgo);
+  return date.toDateString();
+};
+
+// 获取当前选中日期的流量数据
+const currentDayTraffic = computed(() => {
+  const dateKey = getDateString(selectedDayIndex.value);
+  return sevenDayTraffic.value[dateKey] || { upload: 0, download: 0 };
+});
+
+// 获取日期标签（今天、昨天、或具体日期）
+const getDateLabel = (daysAgo) => {
+  if (daysAgo === 0) return "今天";
+  if (daysAgo === 1) return "昨天";
+  const date = new Date();
+  date.setDate(date.getDate() - daysAgo);
+  return `${date.getMonth() + 1}/${date.getDate()}`;
+};
 
 const formatBytes = (bytes) => {
   if (bytes === 0) return "0 B";
@@ -23,22 +66,100 @@ const formatBytes = (bytes) => {
   return (bytes / Math.pow(k, i)).toFixed(2) + " " + sizes[i];
 };
 
-const fetchAllInfo = async (isInitial = false) => {
+const formatSpeed = (bytesPerSecond) => {
+  if (bytesPerSecond === 0) return "0 B/s";
+  const k = 1024;
+  const sizes = ["B/s", "KB/s", "MB/s", "GB/s"];
+  const i = Math.floor(Math.log(bytesPerSecond) / Math.log(k));
+  return (bytesPerSecond / Math.pow(k, i)).toFixed(2) + " " + sizes[i];
+};
+
+// 从 Tauri Store 加载七日流量数据
+const loadSevenDayTraffic = async () => {
+  try {
+    await trafficStore.load();
+    const stored = await trafficStore.get("seven_day_traffic");
+    if (stored) {
+      const data = stored;
+
+      // 清理超过7天的数据
+      const cleanedData = {};
+      const now = new Date();
+
+      Object.keys(data).forEach(dateKey => {
+        const date = new Date(dateKey);
+        const daysDiff = Math.floor((now - date) / (1000 * 60 * 60 * 24));
+
+        if (daysDiff < 7) {
+          cleanedData[dateKey] = data[dateKey];
+        }
+      });
+
+      sevenDayTraffic.value = cleanedData;
+    }
+  } catch (error) {
+    console.error("加载七日流量数据失败:", error);
+  }
+};
+
+// 保存七日流量数据到 Tauri Store
+const saveSevenDayTraffic = async () => {
+  try {
+    await trafficStore.set("seven_day_traffic", sevenDayTraffic.value);
+    await trafficStore.save();
+  } catch (error) {
+    console.error("保存七日流量数据失败:", error);
+  }
+};
+
+const fetchAllInfo = async (isInitial = false, skipTrafficAccumulation = false) => {
   if (isInitial) {
     loading.value = true;
   }
   try {
-    const [sysInfo, cpu, memory, disks] = await Promise.all([
+    const [sysInfo, cpu, memory, disks, network] = await Promise.all([
       invoke("get_system_info"),
       invoke("get_cpu_info"),
       invoke("get_memory_info"),
       invoke("get_disk_info"),
+      invoke("get_network_info"),
     ]);
 
     systemInfo.value = sysInfo;
     cpuInfo.value = cpu;
     memoryInfo.value = memory;
     diskInfo.value = disks;
+    networkInfo.value = network;
+
+    // 计算网络速度和累计流量
+    if (lastNetworkData.value && network.length > 0 && !skipTrafficAccumulation) {
+      let totalUpload = 0;
+      let totalDownload = 0;
+
+      network.forEach((iface, index) => {
+        const lastIface = lastNetworkData.value[index];
+        if (lastIface && lastIface.interface_name === iface.interface_name) {
+          totalDownload += iface.received_bytes - lastIface.received_bytes;
+          totalUpload += iface.transmitted_bytes - lastIface.transmitted_bytes;
+        }
+      });
+
+      currentNetworkSpeed.value = {
+        upload: totalUpload,
+        download: totalDownload,
+      };
+
+      // 累加到今日流量统计
+      const today = getDateString(0);
+      if (!sevenDayTraffic.value[today]) {
+        sevenDayTraffic.value[today] = { upload: 0, download: 0 };
+      }
+      sevenDayTraffic.value[today].upload += totalUpload;
+      sevenDayTraffic.value[today].download += totalDownload;
+      saveSevenDayTraffic();
+    }
+
+    lastNetworkData.value = network;
 
   } catch (error) {
     message.error("获取系统信息失败: " + error);
@@ -51,9 +172,11 @@ const fetchAllInfo = async (isInitial = false) => {
   }
 };
 
-onMounted(() => {
-  // 首次进入视图时加载一次，并提示成功
-  fetchAllInfo(true);
+onMounted(async () => {
+  // 加载七日流量数据
+  await loadSevenDayTraffic();
+  // 首次进入视图时加载一次，但跳过流量累加（仅作为基准）
+  await fetchAllInfo(true, true);
   // 每秒刷新一次系统信息
   timer = setInterval(() => fetchAllInfo(false), 1000);
 });
@@ -226,6 +349,95 @@ onUnmounted(() => {
                 </div>
               </div>
               <a-empty v-else description="未检测到磁盘" />
+            </a-skeleton>
+          </a-card>
+        </div>
+      </a-col>
+
+      <!-- 网络监控卡片 -->
+      <a-col :xs="24">
+        <div class="card-wrapper">
+          <div class="card-header network-header">
+            <div class="icon-box">
+              <WifiOutlined />
+            </div>
+            <span class="card-title">网络监控</span>
+          </div>
+          <a-card :bordered="false" class="info-card custom-card">
+            <a-skeleton active :loading="loading" :paragraph="{ rows: 3 }">
+              <div class="network-container">
+                <!-- 实时速度 -->
+                <div class="network-speed-box">
+                  <div class="speed-item upload">
+                    <ArrowUpOutlined class="speed-icon" />
+                    <div class="speed-content">
+                      <span class="speed-label">上传速度</span>
+                      <span class="speed-value">{{ formatSpeed(currentNetworkSpeed.upload) }}</span>
+                    </div>
+                  </div>
+                  <div class="speed-item download">
+                    <ArrowDownOutlined class="speed-icon" />
+                    <div class="speed-content">
+                      <span class="speed-label">下载速度</span>
+                      <span class="speed-value">{{ formatSpeed(currentNetworkSpeed.download) }}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 七日流量统计 -->
+                <div class="seven-day-traffic">
+                  <div class="traffic-header">
+                    <span class="traffic-title">流量统计</span>
+                  </div>
+
+                  <!-- 日期选择器 -->
+                  <div class="date-selector">
+                    <div
+                      v-for="dayIndex in 7"
+                      :key="dayIndex - 1"
+                      :class="['date-tab', { active: selectedDayIndex === dayIndex - 1 }]"
+                      @click="selectedDayIndex = dayIndex - 1"
+                    >
+                      {{ getDateLabel(dayIndex - 1) }}
+                    </div>
+                  </div>
+
+                  <!-- 流量数据 -->
+                  <div class="traffic-stats">
+                    <div class="traffic-stat-item">
+                      <span class="traffic-label">
+                        <ArrowUpOutlined /> 上传
+                      </span>
+                      <span class="traffic-value upload-color">{{ formatBytes(currentDayTraffic.upload) }}</span>
+                    </div>
+                    <div class="traffic-stat-item">
+                      <span class="traffic-label">
+                        <ArrowDownOutlined /> 下载
+                      </span>
+                      <span class="traffic-value download-color">{{ formatBytes(currentDayTraffic.download) }}</span>
+                    </div>
+                    <div class="traffic-stat-item">
+                      <span class="traffic-label">总计</span>
+                      <span class="traffic-value">{{ formatBytes(currentDayTraffic.upload + currentDayTraffic.download) }}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 网络接口列表 -->
+                <div v-if="networkInfo.length > 0" class="network-interfaces">
+                  <div
+                    v-for="(iface, index) in networkInfo.slice(0, 3)"
+                    :key="index"
+                    class="interface-item"
+                  >
+                    <span class="interface-name">{{ iface.interface_name }}</span>
+                    <div class="interface-stats">
+                      <span class="stat-text">↓ {{ formatBytes(iface.received_bytes) }}</span>
+                      <span class="stat-text">↑ {{ formatBytes(iface.transmitted_bytes) }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </a-skeleton>
           </a-card>
         </div>
@@ -533,5 +745,199 @@ onUnmounted(() => {
 
 :deep(.ant-progress-inner) {
   background-color: #f1f5f9;
+}
+
+/* Network Monitor */
+.network-header .icon-box {
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.1);
+}
+
+.network-container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.network-speed-box {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.speed-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background: #f8fafc;
+  border-radius: 12px;
+  transition: all 0.3s ease;
+}
+
+.speed-item:hover {
+  background: #f1f5f9;
+  transform: translateY(-2px);
+}
+
+.speed-item.upload .speed-icon {
+  font-size: 24px;
+  color: #f59e0b;
+}
+
+.speed-item.download .speed-icon {
+  font-size: 24px;
+  color: #10b981;
+}
+
+.speed-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.speed-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.speed-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.network-interfaces {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.interface-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: #f8fafc;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.interface-name {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.interface-stats {
+  display: flex;
+  gap: 12px;
+}
+
+.stat-text {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+/* Seven Day Traffic */
+.seven-day-traffic {
+  padding: 16px;
+  background: #f8fafc;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.traffic-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.traffic-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Date Selector */
+.date-selector {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+  overflow-x: auto;
+  padding: 2px;
+}
+
+.date-tab {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: white;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  user-select: none;
+}
+
+.date-tab:hover {
+  background: #f1f5f9;
+  border-color: rgba(79, 172, 254, 0.3);
+  color: var(--primary-color);
+}
+
+.date-tab.active {
+  background: var(--primary-gradient);
+  color: white;
+  border-color: transparent;
+  box-shadow: 0 4px 12px rgba(79, 172, 254, 0.3);
+}
+
+.traffic-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.traffic-stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  background: white;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  border-radius: 8px;
+  transition: all 0.3s ease;
+}
+
+.traffic-stat-item:hover {
+  background: #fafbfc;
+  border-color: rgba(79, 172, 254, 0.2);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.traffic-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.traffic-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.upload-color {
+  color: #f59e0b;
+}
+
+.download-color {
+  color: #10b981;
 }
 </style>

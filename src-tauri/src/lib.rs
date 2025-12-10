@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::process::Command as StdCommand;
 use std::sync::Arc;
-use sysinfo::{Disks, System};
+use sysinfo::{Disks, Networks, System};
 
 #[derive(Serialize, Deserialize)]
 struct SystemInfo {
@@ -45,6 +45,15 @@ struct DiskInfo {
     total_space: u64,
     available_space: u64,
     file_system: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct NetworkInfo {
+    interface_name: String,
+    received_bytes: u64,
+    transmitted_bytes: u64,
+    received_packets: u64,
+    transmitted_packets: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -180,6 +189,22 @@ fn get_disk_info() -> Vec<DiskInfo> {
             total_space: disk.total_space(),
             available_space: disk.available_space(),
             file_system: disk.file_system().to_string_lossy().to_string(),
+        })
+        .collect()
+}
+
+#[tauri::command]
+fn get_network_info() -> Vec<NetworkInfo> {
+    let networks = Networks::new_with_refreshed_list();
+
+    networks
+        .iter()
+        .map(|(interface_name, data)| NetworkInfo {
+            interface_name: interface_name.clone(),
+            received_bytes: data.total_received(),
+            transmitted_bytes: data.total_transmitted(),
+            received_packets: data.total_packets_received(),
+            transmitted_packets: data.total_packets_transmitted(),
         })
         .collect()
 }
@@ -368,6 +393,7 @@ pub fn run() {
             get_cpu_info,
             get_memory_info,
             get_disk_info,
+            get_network_info,
             fetch_url,
             parse_html_by_selector,
             scrape_page,

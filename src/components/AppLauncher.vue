@@ -565,197 +565,239 @@ onUnmounted(() => {
 
 <template>
   <div class="app-launcher">
-    <a-card title="" :bordered="false">
-      <template #extra>
-        <a-space>
-          <!-- 场景选择 -->
-          <a-select
-            v-model:value="currentScene"
-            style="min-width: 160px"
-            :options="sceneOptions"
-            placeholder="选择场景"
-            @change="handleSceneChange"
-          />
-          <a-button
-            type="dashed"
-            size="small"
-            :icon="h(PlusOutlined)"
-            @click="openCreateSceneModal"
-          >
-            新建场景
-          </a-button>
-          <a-button
-            type="dashed"
-            size="small"
-            :icon="h(EditOutlined)"
-            @click="openRenameSceneModal"
-          >
-            重命名场景
-          </a-button>
-          <a-popconfirm
-            title="确认删除当前场景及其下所有应用？"
-            ok-text="删除"
-            cancel-text="取消"
-            @confirm="handleDeleteScene"
-          >
-            <a-button
-              type="dashed"
-              danger
-              size="small"
-              :icon="h(DeleteOutlined)"
+    <div class="card-wrapper">
+      <!-- 头部区域 -->
+      <div class="card-header launcher-header">
+        <div class="header-left">
+          <div class="icon-box">
+            <RocketOutlined />
+          </div>
+          <span class="card-title">应用启动</span>
+        </div>
+
+        <div class="header-controls">
+          <!-- 场景管理 -->
+          <div class="scene-selector-group">
+            <a-select
+              v-model:value="currentScene"
+              class="scene-select"
+              :options="sceneOptions"
+              placeholder="选择场景"
+              @change="handleSceneChange"
+              :dropdownMatchSelectWidth="false"
+            />
+            
+            <a-tooltip title="新建场景">
+              <a-button class="icon-btn" @click="openCreateSceneModal">
+                <PlusOutlined />
+              </a-button>
+            </a-tooltip>
+            
+            <a-tooltip title="重命名场景">
+              <a-button class="icon-btn" @click="openRenameSceneModal">
+                <EditOutlined />
+              </a-button>
+            </a-tooltip>
+            
+            <a-popconfirm
+              title="确认删除当前场景及其下所有应用？"
+              ok-text="删除"
+              cancel-text="取消"
+              @confirm="handleDeleteScene"
             >
-              删除场景
+              <a-tooltip title="删除场景">
+                <a-button class="icon-btn" danger>
+                  <DeleteOutlined />
+                </a-button>
+              </a-tooltip>
+            </a-popconfirm>
+          </div>
+        </div>
+      </div>
+
+      <div class="card-body">
+        <!-- 顶部操作栏 -->
+        <div class="action-bar">
+          <div class="action-left">
+            <a-tag color="blue">
+              <template #icon><AppstoreAddOutlined /></template>
+              {{ currentScene }} ({{ appsInScene.length }})
+            </a-tag>
+          </div>
+          
+          <div class="action-right">
+             <a-button
+              type="default"
+              class="action-btn"
+              @click="handleLaunchSceneAll"
+              :loading="launching"
+              :disabled="appsInScene.length === 0"
+            >
+              <template #icon><RocketOutlined /></template>
+              {{ launching ? "启动中..." : "启动本场景全部" }}
             </a-button>
-          </a-popconfirm>
-          <a-button
-            type="primary"
-            danger
-            :icon="h(DeleteOutlined)"
-            @click="() => {}"
-            :disabled="selectedRowKeys.length === 0"
-          >
+
+            <a-button
+              type="primary"
+              class="action-btn"
+              @click="handleLaunchSelected"
+              :loading="launching"
+              :disabled="selectedRowKeys.length === 0"
+            >
+              <template #icon><RocketOutlined /></template>
+              {{ launching ? "启动中..." : "启动选中" }}
+            </a-button>
+
             <a-popconfirm
               title="确认删除选中的应用？"
               ok-text="删除"
               cancel-text="取消"
               @confirm="handleBatchDelete"
             >
-              <span>批量删除 ({{ selectedRowKeys.length }})</span>
+              <a-button
+                danger
+                class="action-btn"
+                :disabled="selectedRowKeys.length === 0"
+              >
+                <template #icon><DeleteOutlined /></template>
+                批量删除
+              </a-button>
             </a-popconfirm>
-          </a-button>
-          <a-button
-            type="primary"
-            :icon="h(RocketOutlined)"
-            @click="handleLaunchSelected"
-            :loading="launching"
-            :disabled="selectedRowKeys.length === 0"
-          >
-            {{ launching ? "启动中..." : "启动选中" }}
-          </a-button>
-          <a-button
-            type="default"
-            :icon="h(RocketOutlined)"
-            @click="handleLaunchSceneAll"
-            :loading="launching"
-            :disabled="appsInScene.length === 0"
-          >
-            {{ launching ? "启动中..." : "本场景全部" }}
-          </a-button>
-        </a-space>
-      </template>
+          </div>
+        </div>
 
-      <!-- 拖放区域 -->
-      <div
-        class="drop-zone"
-        :class="{ 'drop-zone-active': isDragging }"
-        @dragover="handleDragOver"
-        @dragleave="handleDragLeave"
-        @drop="handleDrop"
-      >
-        <CloudUploadOutlined class="drop-icon" />
-        <p class="drop-text">拖放程序快捷方式到此处</p>
-        <p class="drop-hint">支持 .lnk、.exe 等文件</p>
-      </div>
-
-      <!-- 应用列表 -->
-      <div class="app-list">
-        <a-divider orientation="left">
-          <AppstoreAddOutlined />
-          已添加的应用 ({{ appsInScene.length }}) - 场景：{{ currentScene }}
-        </a-divider>
-
-        <a-table
-          :columns="columns"
-          :data-source="appsInScene"
-          :row-key="(record) => record.id"
-          :row-selection="rowSelection"
-          :pagination="apps.length > 10 ? { pageSize: 10 } : false"
-          :scroll="{ x: 800 }"
+        <!-- 拖放区域 -->
+        <div
+          class="drop-zone"
+          :class="{ 'drop-zone-active': isDragging }"
+          @dragover="handleDragOver"
+          @dragleave="handleDragLeave"
+          @drop="handleDrop"
         >
-          <template #bodyCell="{ column, record }">
-            <template v-if="column.key === 'name'">
-              <div>
-                <a-input
-                  v-if="editingNameId === record.id"
-                  v-model:value="editingNameValue"
-                  size="small"
-                  @blur="() => finishEditName(record)"
-                  @pressEnter="() => finishEditName(record)"
-                />
-                <span
-                  v-else
-                  class="app-name-text"
-                  @click="startEditName(record)"
-                >
-                  {{ record.name }}
-                </span>
+          <div class="drop-content">
+            <div class="drop-icon-wrapper">
+              <CloudUploadOutlined class="drop-icon" />
+            </div>
+            <div class="drop-text-group">
+              <p class="drop-title">拖放程序快捷方式到此处</p>
+              <p class="drop-desc">支持 .lnk、.exe 等文件自动识别</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 应用列表 -->
+        <div class="app-table-wrapper">
+          <a-table
+            :columns="columns"
+            :data-source="appsInScene"
+            :row-key="(record) => record.id"
+            :row-selection="rowSelection"
+            :pagination="apps.length > 10 ? { pageSize: 10 } : false"
+            :scroll="{ x: 800 }"
+            class="custom-table"
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'name'">
+                <div class="name-cell">
+                  <a-input
+                    v-if="editingNameId === record.id"
+                    v-model:value="editingNameValue"
+                    size="small"
+                    class="name-input"
+                    @blur="() => finishEditName(record)"
+                    @pressEnter="() => finishEditName(record)"
+                    auto-focus
+                  />
+                  <span
+                    v-else
+                    class="app-name-text"
+                    title="点击编辑名称"
+                    @click="startEditName(record)"
+                  >
+                    {{ record.name }}
+                    <EditOutlined class="edit-hint-icon" />
+                  </span>
+                </div>
+              </template>
+              <template v-else-if="column.key === 'addedAt'">
+                <span class="date-text">{{
+                  new Date(record.addedAt).toLocaleString("zh-CN")
+                }}</span>
+              </template>
+              <template v-else-if="column.key === 'action'">
+                <div class="action-buttons">
+                  <a-tooltip title="启动">
+                    <a-button
+                      type="text"
+                      size="small"
+                      class="row-btn launch-btn"
+                      @click="launchApps([record])"
+                    >
+                      <RocketOutlined />
+                    </a-button>
+                  </a-tooltip>
+                  
+                  <div class="divider-vertical"></div>
+                  
+                  <a-tooltip title="上移">
+                    <a-button
+                      type="text"
+                      size="small"
+                      class="row-btn"
+                      @click="() => moveRow(record, 'up')"
+                    >
+                      <ArrowUpOutlined />
+                    </a-button>
+                  </a-tooltip>
+                  <a-tooltip title="下移">
+                    <a-button
+                      type="text"
+                      size="small"
+                      class="row-btn"
+                      @click="() => moveRow(record, 'down')"
+                    >
+                      <ArrowDownOutlined />
+                    </a-button>
+                  </a-tooltip>
+                  
+                  <div class="divider-vertical"></div>
+
+                  <a-dropdown>
+                    <a-button type="text" size="small" class="row-btn">
+                      <EllipsisOutlined />
+                    </a-button>
+                    <template #overlay>
+                      <a-menu>
+                        <a-menu-item @click="() => openAppFolder(record)">
+                          <FolderOpenOutlined /> 打开位置
+                        </a-menu-item>
+                        <a-menu-item @click="openSceneModal(record)">
+                          <SwapOutlined /> 移动场景
+                        </a-menu-item>
+                        <a-menu-divider />
+                        <a-menu-item danger @click="() => handleDelete(record.id)">
+                          <DeleteOutlined /> 删除应用
+                        </a-menu-item>
+                      </a-menu>
+                    </template>
+                  </a-dropdown>
+                </div>
+              </template>
+            </template>
+
+            <template #emptyText>
+              <div class="empty-state">
+                <div class="empty-icon-bg">
+                   <AppstoreAddOutlined />
+                </div>
+                <span class="empty-text">暂无应用，请从上方拖入</span>
               </div>
             </template>
-            <template v-else-if="column.key === 'addedAt'">
-              <span>{{
-                new Date(record.addedAt).toLocaleString("zh-CN")
-              }}</span>
-            </template>
-            <template v-else-if="column.key === 'action'">
-              <a-button
-                type="link"
-                size="small"
-                :icon="h(RocketOutlined)"
-                title="启动"
-                @click="launchApps([record])"
-              />
-              <a-button
-                type="link"
-                size="small"
-                :icon="h(ArrowUpOutlined)"
-                title="上移"
-                @click="() => moveRow(record, 'up')"
-              />
-              <a-button
-                type="link"
-                size="small"
-                :icon="h(ArrowDownOutlined)"
-                title="下移"
-                @click="() => moveRow(record, 'down')"
-              />
-
-              <a-button
-                type="link"
-                size="small"
-                :icon="h(FolderOpenOutlined)"
-                title="打开所在文件夹"
-                @click="() => openAppFolder(record)"
-              />
-              <a-button
-                type="link"
-                size="small"
-                :icon="h(EditOutlined)"
-                title="改场景"
-                @click="openSceneModal(record)"
-              />
-              <a-popconfirm
-                title="确认删除该应用？"
-                ok-text="删除"
-                cancel-text="取消"
-                @confirm="() => handleDelete(record.id)"
-              >
-                <a-button
-                  type="link"
-                  danger
-                  size="small"
-                  :icon="h(DeleteOutlined)"
-                  title="删除"
-                />
-              </a-popconfirm>
-            </template>
-          </template>
-
-          <template #emptyText>
-            <a-empty description="暂无应用，请拖放程序快捷方式到上方区域" />
-          </template>
-        </a-table>
+          </a-table>
+        </div>
       </div>
-    </a-card>
+    </div>
+
     <!-- 修改场景弹窗 -->
     <a-modal
       v-model:open="sceneModalOpen"
@@ -810,64 +852,285 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-:deep .ant-card .ant-card-extra {
-  margin-left: 0;
-}
 .app-launcher {
-  width: 100%;
+  padding-bottom: 20px;
 }
 
-.drop-zone {
-  border: 2px dashed #d9d9d9;
+.card-wrapper {
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: var(--box-shadow);
+  overflow: hidden;
+  transition: transform 0.3s ease;
+  min-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header Styles */
+.card-header {
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #f8fafc;
+  border-bottom: 1px solid rgba(0,0,0,0.03);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.launcher-header .icon-box {
+  color: #4facfe;
+  background: rgba(79, 172, 254, 0.1);
+}
+
+.icon-box {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+}
+
+.card-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.scene-selector-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.scene-select {
+  width: 180px;
+}
+
+.icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-secondary);
+}
+
+.icon-btn:hover {
+  background: rgba(0,0,0,0.03);
+  color: var(--primary-color);
+}
+
+/* Body Content */
+.card-body {
+  padding: 24px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.action-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.action-right {
+  display: flex;
+  gap: 12px;
+}
+
+.action-btn {
   border-radius: 8px;
-  padding: 60px 20px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+/* Drop Zone */
+.drop-zone {
+  border: 2px dashed rgba(79, 172, 254, 0.3);
+  border-radius: 12px;
+  padding: 32px;
   text-align: center;
-  background: #fafafa;
-  transition: all 0.3s;
+  background: rgba(248, 250, 252, 0.6);
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
   cursor: pointer;
   margin-bottom: 24px;
+  position: relative;
+  overflow: hidden;
 }
 
 .drop-zone:hover {
-  border-color: #1890ff;
-  background: #e6f7ff;
+  border-color: var(--primary-color);
+  background: rgba(79, 172, 254, 0.05);
+  transform: translateY(-2px);
 }
 
 .drop-zone-active {
-  border-color: #1890ff;
-  background: #e6f7ff;
-  transform: scale(1.02);
+  border-color: var(--primary-color);
+  background: rgba(79, 172, 254, 0.1);
+  transform: scale(1.01);
+  box-shadow: 0 10px 30px rgba(79, 172, 254, 0.15);
+}
+
+.drop-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+}
+
+.drop-icon-wrapper {
+  width: 64px;
+  height: 64px;
+  border-radius: 20px;
+  background: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.05);
 }
 
 .drop-icon {
-  font-size: 48px;
-  color: #1890ff;
-  margin-bottom: 16px;
+  font-size: 32px;
+  color: #4facfe;
 }
 
-.drop-text {
+.drop-text-group {
+  text-align: left;
+}
+
+.drop-title {
   font-size: 16px;
-  color: #262626;
-  margin: 0 0 8px 0;
-  font-weight: 500;
+  color: var(--text-primary);
+  margin: 0 0 4px 0;
+  font-weight: 600;
 }
 
-.drop-hint {
-  font-size: 14px;
-  color: #8c8c8c;
+.drop-desc {
+  font-size: 13px;
+  color: var(--text-tertiary);
   margin: 0;
 }
 
-.app-list {
-  margin-top: 24px;
-}
-
-:deep(.ant-table) {
-  font-size: 14px;
+/* Table Styles */
+.app-table-wrapper {
+  background: white;
+  border-radius: 12px;
+  border: 1px solid rgba(0,0,0,0.03);
+  overflow: hidden;
 }
 
 :deep(.ant-table-thead > tr > th) {
-  background: #fafafa;
+  background: #f8fafc;
   font-weight: 600;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.name-cell {
+  display: flex;
+  align-items: center;
+}
+
+.app-name-text {
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+}
+
+.app-name-text:hover {
+  background: #f1f5f9;
+  color: var(--primary-color);
+}
+
+.edit-hint-icon {
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.app-name-text:hover .edit-hint-icon {
+  opacity: 0.7;
+}
+
+.date-text {
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+.action-buttons {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.row-btn {
+  color: var(--text-secondary);
+}
+
+.row-btn:hover {
+  color: var(--primary-color);
+  background: rgba(79, 172, 254, 0.1);
+}
+
+.launch-btn {
+  color: #10b981;
+}
+
+.launch-btn:hover {
+  color: #059669;
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.divider-vertical {
+  width: 1px;
+  height: 14px;
+  background: #e2e8f0;
+  margin: 0 4px;
+}
+
+/* Empty State */
+.empty-state {
+  padding: 40px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+
+.empty-icon-bg {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: #f8fafc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  color: #cbd5e1;
+}
+
+.empty-text {
+  color: var(--text-tertiary);
 }
 </style>

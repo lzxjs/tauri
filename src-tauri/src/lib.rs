@@ -390,6 +390,23 @@ pub fn run() {
                 None, // 不传递额外参数
             ))?;
 
+            // 检查静默启动配置
+            #[cfg(desktop)]
+            {
+                use tauri::Manager;
+                use tauri_plugin_store::StoreExt;
+
+                if let Some(store) = app.handle().store("settings.json").ok() {
+                    if let Some(silent_start) = store.get("silent_start") {
+                        if silent_start.as_bool().unwrap_or(false) {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.hide();
+                            }
+                        }
+                    }
+                }
+            }
+
             // 创建系统托盘
             #[cfg(desktop)]
             {

@@ -17,7 +17,8 @@
       "Bash(cmd /c taskkill /F /PID 28172)",
       "Bash(npm run tauri:build)",
       "Bash(rm \"d:\\code\\tauri\\src\\services\\networkTrafficService.js\")",
-      "Bash(npm install @tauri-apps/plugin-updater @tauri-apps/plugin-process)"
+      "Bash(npm install @tauri-apps/plugin-updater @tauri-apps/plugin-process)",
+      "Bash(cargo check)"
     ]
   }
 }

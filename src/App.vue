@@ -7,6 +7,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { loadClipboardItems, addClipboardItem } from './composables/useClipboardStore';
 import { useUpdater } from './composables/useUpdater';
+import { Store } from '@tauri-apps/plugin-store';
 
 const route = useRoute();
 const router = useRouter();
@@ -37,6 +38,11 @@ watch(collapsed, (newValue) => {
 // 开机启动状态
 const autostartEnabled = ref(false);
 const autostartLoading = ref(false);
+
+// 静默启动状态
+const silentStartEnabled = ref(false);
+const silentStartLoading = ref(false);
+let store = null;
 
 // 剪贴板监听取消函数
 let unlistenClipboard = null;
@@ -83,6 +89,26 @@ const toggleAutostart = async (checked) => {
   }
 };
 
+// 切换静默启动
+const toggleSilentStart = async (checked) => {
+  silentStartLoading.value = true;
+  try {
+    if (!store) {
+      store = await Store.load('settings.json');
+    }
+    await store.set('silent_start', checked);
+    await store.save();
+    silentStartEnabled.value = checked;
+    message.success(checked ? "已启用静默启动" : "已禁用静默启动");
+  } catch (error) {
+    console.error("切换静默启动失败:", error);
+    message.error("操作失败，请重试");
+    silentStartEnabled.value = !checked;
+  } finally {
+    silentStartLoading.value = false;
+  }
+};
+
 // 启动剪贴板监听服务
 const startClipboardMonitoring = async () => {
   try {
@@ -123,8 +149,17 @@ const stopClipboardMonitoring = async () => {
 };
 
 // 组件挂载时检查状态
-onMounted(() => {
+onMounted(async () => {
   checkAutostartStatus();
+
+  // 加载静默启动状态
+  try {
+    store = await Store.load('settings.json');
+    const silentStart = await store.get('silent_start');
+    silentStartEnabled.value = silentStart === true;
+  } catch (error) {
+    console.error("加载静默启动状态失败:", error);
+  }
 
   // 恢复上次访问的路由
   const lastRouteName = localStorage.getItem(LAST_ROUTE_KEY);
@@ -226,13 +261,27 @@ onUnmounted(() => {
 
            <div class="autostart-card">
              <div class="autostart-info">
-               <span class="autostart-title">开机启动</span>
-               <span class="autostart-desc">随系统自动运行</span>
+               <span class="autostart-title">开机自启</span>
+               <span class="autostart-desc">开机后自动打开本程序</span>
              </div>
              <a-switch
                v-model:checked="autostartEnabled"
                :loading="autostartLoading"
                @change="toggleAutostart"
+               class="custom-switch"
+             />
+           </div>
+
+           <div class="autostart-card">
+             <div class="autostart-info">
+               <span class="autostart-title">静默启动</span>
+               <span class="autostart-desc">启动时不显示窗口</span>
+               <span class="autostart-desc">可配合开机自启</span>
+             </div>
+             <a-switch
+               v-model:checked="silentStartEnabled"
+               :loading="silentStartLoading"
+               @change="toggleSilentStart"
                class="custom-switch"
              />
            </div>

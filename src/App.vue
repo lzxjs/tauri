@@ -6,6 +6,7 @@ import { message } from "ant-design-vue";
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { loadClipboardItems, addClipboardItem } from './composables/useClipboardStore';
+import { useUpdater } from './composables/useUpdater';
 
 const route = useRoute();
 const router = useRouter();
@@ -39,6 +40,10 @@ const autostartLoading = ref(false);
 
 // 剪贴板监听取消函数
 let unlistenClipboard = null;
+
+// 更新检查
+const { checkForUpdates } = useUpdater();
+const version = '0.1.0';
 
 // 处理菜单点击，使用 vue-router 切换路径
 const handleMenuClick = ({ key }) => {
@@ -137,6 +142,9 @@ onMounted(() => {
 
   // 启动全局剪贴板监听服务
   startClipboardMonitoring();
+
+  // 启动时检查更新（静默模式）- 待服务器部署后取消注释
+  // checkForUpdates(true);
 });
 
 // 组件卸载时停止服务
@@ -205,6 +213,16 @@ onUnmounted(() => {
             <span class="collapse-icon">{{ collapsed ? '→' : '←' }}</span>
             <span v-if="!collapsed" class="collapse-text">收起</span>
           </div>
+
+          <!-- 检查更新按钮（待服务器部署后取消注释）
+          <div class="autostart-card" @click="checkForUpdates(false)" style="cursor: pointer;">
+            <div class="autostart-info">
+              <span class="autostart-title">检查更新</span>
+              <span class="autostart-desc">v{{ version }}</span>
+            </div>
+            <span style="font-size: 18px;">🔄</span>
+          </div>
+          -->
 
            <div class="autostart-card">
              <div class="autostart-info">

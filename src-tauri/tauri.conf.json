@@ -39,6 +39,14 @@
   "plugins": {
     "shell": {
       "open": ".*"
+    },
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://your-server.com/updates/latest.json"
+      ],
+      "dialog": true,
+      "pubkey": ""
     }
   }
 }

@@ -24,7 +24,13 @@ import {
   BarsOutlined,
   QrcodeOutlined,
   DownloadOutlined,
-  InfoCircleOutlined
+  InfoCircleOutlined,
+  CheckSquareOutlined,
+  CloseSquareOutlined,
+  ExportOutlined,
+  MergeCellsOutlined,
+  CalendarOutlined,
+  FontSizeOutlined
 } from '@ant-design/icons-vue';
 import {
   clipboardItems,
@@ -51,6 +57,20 @@ const previewVisible = ref(false); // 预览对话框显示状态
 const listContainerRef = ref(null);
 const loadTrigger = ref(null);
 
+// 批量操作相关
+const batchMode = ref(false);
+const batchSelectedIds = ref(new Set());
+
+// 高级筛选相关
+const advancedFilterVisible = ref(false);
+const dateRange = ref('all'); // 'all' | 'today' | 'week' | 'month'
+const wordCountRange = ref('all'); // 'all' | 'short' | 'medium' | 'long'
+
+// 搜索增强相关
+const regexMode = ref(false);
+const searchHistory = ref([]);
+const searchInputFocused = ref(false);
+
 // 分页相关
 const pageSize = 20;
 const visibleCount = ref(pageSize);
@@ -68,6 +88,11 @@ const qrCodeVisible = ref(false);
 const qrCodeDataUrl = ref('');
 const qrCodeContent = ref('');
 
+// 文本预览相关
+const textPreviewVisible = ref(false);
+const textPreviewContent = ref('');
+const textPreviewItem = ref(null);
+
 // 过滤后的列表
 const filteredItems = computed(() => {
   let items = activeTab.value === 'favorites'
@@ -79,13 +104,55 @@ const filteredItems = computed(() => {
     items = items.filter(item => item.type === filterType.value);
   }
 
-  // 关键词搜索
+  // 日期范围筛选
+  if (dateRange.value !== 'all') {
+    const now = Date.now();
+    const oneDayMs = 24 * 60 * 60 * 1000;
+    items = items.filter(item => {
+      const diff = now - item.createdAt;
+      if (dateRange.value === 'today') return diff < oneDayMs;
+      if (dateRange.value === 'week') return diff < 7 * oneDayMs;
+      if (dateRange.value === 'month') return diff < 30 * oneDayMs;
+      return true;
+    });
+  }
+
+  // 字数范围筛选
+  if (wordCountRange.value !== 'all') {
+    items = items.filter(item => {
+      const wordCount = getWordCount(item.content);
+      if (wordCountRange.value === 'short') return wordCount < 100;
+      if (wordCountRange.value === 'medium') return wordCount >= 100 && wordCount <= 500;
+      if (wordCountRange.value === 'long') return wordCount > 500;
+      return true;
+    });
+  }
+
+  // 关键词搜索（支持正则）
   if (searchKeyword.value.trim()) {
-    const keyword = searchKeyword.value.toLowerCase();
-    items = items.filter(item =>
-      item.content.toLowerCase().includes(keyword) ||
-      (item.note && item.note.toLowerCase().includes(keyword))
-    );
+    const keyword = searchKeyword.value;
+    if (regexMode.value) {
+      try {
+        const regex = new RegExp(keyword, 'i');
+        items = items.filter(item =>
+          regex.test(item.content) ||
+          (item.note && regex.test(item.note))
+        );
+      } catch (e) {
+        // 正则表达式错误，回退到普通搜索
+        const lowerKeyword = keyword.toLowerCase();
+        items = items.filter(item =>
+          item.content.toLowerCase().includes(lowerKeyword) ||
+          (item.note && item.note.toLowerCase().includes(lowerKeyword))
+        );
+      }
+    } else {
+      const lowerKeyword = keyword.toLowerCase();
+      items = items.filter(item =>
+        item.content.toLowerCase().includes(lowerKeyword) ||
+        (item.note && item.note.toLowerCase().includes(lowerKeyword))
+      );
+    }
   }
 
   return items;
@@ -97,7 +164,7 @@ const displayedItems = computed(() => {
 });
 
 // 监听筛选条件变化，重置分页
-watch([() => activeTab.value, () => filterType.value, () => searchKeyword.value], () => {
+watch([() => activeTab.value, () => filterType.value, () => searchKeyword.value, () => dateRange.value, () => wordCountRange.value], () => {
   visibleCount.value = pageSize;
   // 清理部分缓存以释放内存
   if (imageCache.size > 100) {
@@ -106,6 +173,11 @@ watch([() => activeTab.value, () => filterType.value, () => searchKeyword.value]
   // 滚动回顶部
   if (listContainerRef.value) {
     listContainerRef.value.scrollTop = 0;
+  }
+  // 退出批量模式
+  if (batchMode.value) {
+    batchMode.value = false;
+    batchSelectedIds.value.clear();
   }
 });
 
@@ -199,6 +271,21 @@ const showImagePreview = (item) => {
 const closeImagePreview = () => {
   previewVisible.value = false;
   previewImage.value = null;
+};
+
+// 显示文本预览
+const showTextPreview = (item) => {
+  if (item.type === 'image') return;
+  textPreviewContent.value = item.content;
+  textPreviewItem.value = item;
+  textPreviewVisible.value = true;
+};
+
+// 关闭文本预览
+const closeTextPreview = () => {
+  textPreviewVisible.value = false;
+  textPreviewContent.value = '';
+  textPreviewItem.value = null;
 };
 
 // 格式化时间
@@ -418,6 +505,193 @@ const handleLimitChange = async (value) => {
   }
 };
 
+// ========== 批量操作功能 ==========
+
+// 切换批量模式
+const toggleBatchMode = () => {
+  batchMode.value = !batchMode.value;
+  if (!batchMode.value) {
+    batchSelectedIds.value.clear();
+  }
+};
+
+// 切换单项选中状态
+const toggleItemSelection = (itemId) => {
+  if (batchSelectedIds.value.has(itemId)) {
+    batchSelectedIds.value.delete(itemId);
+  } else {
+    batchSelectedIds.value.add(itemId);
+  }
+};
+
+// 全选/取消全选
+const toggleSelectAll = () => {
+  if (batchSelectedIds.value.size === displayedItems.value.length) {
+    batchSelectedIds.value.clear();
+  } else {
+    batchSelectedIds.value.clear();
+    displayedItems.value.forEach(item => {
+      batchSelectedIds.value.add(item.id);
+    });
+  }
+};
+
+// 批量删除
+const handleBatchDelete = async () => {
+  if (batchSelectedIds.value.size === 0) {
+    message.warning('请先选择要删除的项目');
+    return;
+  }
+  try {
+    const ids = Array.from(batchSelectedIds.value);
+    await removeClipboardItems(ids);
+    message.success(`已删除 ${ids.length} 项`);
+    batchSelectedIds.value.clear();
+    batchMode.value = false;
+  } catch (error) {
+    message.error('批量删除失败: ' + error);
+  }
+};
+
+// 批量收藏/取消收藏
+const handleBatchFavorite = async (isFavorite) => {
+  if (batchSelectedIds.value.size === 0) {
+    message.warning('请先选择要操作的项目');
+    return;
+  }
+  try {
+    const ids = Array.from(batchSelectedIds.value);
+    for (const id of ids) {
+      await toggleFavorite(id);
+    }
+    message.success(`已${isFavorite ? '收藏' : '取消收藏'} ${ids.length} 项`);
+    batchSelectedIds.value.clear();
+  } catch (error) {
+    message.error('批量操作失败: ' + error);
+  }
+};
+
+// 批量导出
+const handleBatchExport = async () => {
+  if (batchSelectedIds.value.size === 0) {
+    message.warning('请先选择要导出的项目');
+    return;
+  }
+  try {
+    const selectedItems = clipboardItems.value.filter(item =>
+      batchSelectedIds.value.has(item.id)
+    );
+
+    let content = '';
+    selectedItems.forEach((item, index) => {
+      content += `========== 项目 ${index + 1} ==========\n`;
+      content += `类型: ${getTypeLabel(item.type)}\n`;
+      content += `时间: ${new Date(item.createdAt).toLocaleString('zh-CN')}\n`;
+      if (item.note) content += `备注: ${item.note}\n`;
+      content += `内容:\n${item.content}\n\n`;
+    });
+
+    const filePath = await save({
+      filters: [{
+        name: 'Text',
+        extensions: ['txt']
+      }],
+      defaultPath: `clipboard_export_${Date.now()}.txt`
+    });
+
+    if (!filePath) return;
+
+    await writeTextFile(filePath, content);
+    message.success(`已导出 ${selectedItems.length} 项到文件`);
+  } catch (error) {
+    message.error('导出失败: ' + error);
+  }
+};
+
+// 批量合并复制
+const handleBatchCopy = async () => {
+  if (batchSelectedIds.value.size === 0) {
+    message.warning('请先选择要合并的项目');
+    return;
+  }
+  try {
+    const selectedItems = clipboardItems.value
+      .filter(item => batchSelectedIds.value.has(item.id))
+      .filter(item => item.type !== 'image'); // 排除图片
+
+    if (selectedItems.length === 0) {
+      message.warning('没有可合并的文本内容');
+      return;
+    }
+
+    const mergedContent = selectedItems.map(item => item.content).join('\n\n');
+    await invoke('set_clipboard_text', { text: mergedContent });
+    message.success(`已合并复制 ${selectedItems.length} 项`);
+  } catch (error) {
+    message.error('合并复制失败: ' + error);
+  }
+};
+
+// ========== 搜索历史功能 ==========
+
+// 加载搜索历史
+const loadSearchHistory = () => {
+  try {
+    const history = localStorage.getItem('clipboard_search_history');
+    if (history) {
+      searchHistory.value = JSON.parse(history);
+    }
+  } catch (error) {
+    console.error('加载搜索历史失败:', error);
+  }
+};
+
+// 保存搜索历史
+const saveSearchHistory = (keyword) => {
+  if (!keyword.trim()) return;
+
+  // 移除重复项
+  searchHistory.value = searchHistory.value.filter(item => item !== keyword);
+  // 添加到开头
+  searchHistory.value.unshift(keyword);
+  // 限制最多5条
+  if (searchHistory.value.length > 5) {
+    searchHistory.value = searchHistory.value.slice(0, 5);
+  }
+
+  try {
+    localStorage.setItem('clipboard_search_history', JSON.stringify(searchHistory.value));
+  } catch (error) {
+    console.error('保存搜索历史失败:', error);
+  }
+};
+
+// 清空搜索历史
+const clearSearchHistory = () => {
+  searchHistory.value = [];
+  localStorage.removeItem('clipboard_search_history');
+  message.success('已清空搜索历史');
+};
+
+// 使用搜索历史
+const useSearchHistory = (keyword) => {
+  searchKeyword.value = keyword;
+};
+
+// 处理搜索框失焦
+const handleSearchBlur = () => {
+  setTimeout(() => {
+    searchInputFocused.value = false;
+  }, 200);
+};
+
+// 监听搜索关键词变化，保存历史
+watch(searchKeyword, (newVal, oldVal) => {
+  if (oldVal && oldVal.trim() && newVal !== oldVal) {
+    saveSearchHistory(oldVal);
+  }
+});
+
 // 滚动加载更多
 const loadMore = () => {
   if (visibleCount.value < filteredItems.value.length) {
@@ -425,10 +699,58 @@ const loadMore = () => {
   }
 };
 
+// ========== 快捷键支持 ==========
+
+// 快捷键处理
+const handleKeyDown = (e) => {
+  // Ctrl/Cmd + A: 全选
+  if ((e.ctrlKey || e.metaKey) && e.key === 'a' && batchMode.value) {
+    e.preventDefault();
+    toggleSelectAll();
+    return;
+  }
+
+  // Ctrl/Cmd + F: 聚焦搜索框
+  if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+    e.preventDefault();
+    const searchInput = document.querySelector('.custom-search input');
+    if (searchInput) searchInput.focus();
+    return;
+  }
+
+  // Delete: 删除选中项
+  if (e.key === 'Delete' && batchMode.value && batchSelectedIds.value.size > 0) {
+    e.preventDefault();
+    handleBatchDelete();
+    return;
+  }
+
+  // Ctrl/Cmd + C: 批量复制
+  if ((e.ctrlKey || e.metaKey) && e.key === 'c' && batchMode.value && batchSelectedIds.value.size > 0) {
+    e.preventDefault();
+    handleBatchCopy();
+    return;
+  }
+
+  // Esc: 退出批量模式
+  if (e.key === 'Escape' && batchMode.value) {
+    e.preventDefault();
+    batchMode.value = false;
+    batchSelectedIds.value.clear();
+    return;
+  }
+};
+
 // 观察器实例
 let observer = null;
 
 onMounted(() => {
+  // 加载搜索历史
+  loadSearchHistory();
+
+  // 添加快捷键监听
+  window.addEventListener('keydown', handleKeyDown);
+
   // 设置 IntersectionObserver 实现无限滚动
   observer = new IntersectionObserver((entries) => {
     if (entries[0].isIntersecting) {
@@ -454,6 +776,9 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  // 移除快捷键监听
+  window.removeEventListener('keydown', handleKeyDown);
+
   if (observer) {
     observer.disconnect();
   }
@@ -471,11 +796,43 @@ onUnmounted(() => {
           placeholder="搜索剪贴板内容、备注..."
           class="custom-search"
           allow-clear
+          @focus="searchInputFocused = true"
+          @blur="handleSearchBlur"
         >
           <template #prefix>
             <SearchOutlined style="color: var(--text-tertiary)" />
           </template>
+          <template #suffix>
+            <a-tooltip :title="regexMode ? '正则模式' : '普通模式'">
+              <a-button
+                type="text"
+                size="small"
+                :class="['regex-toggle', { 'regex-active': regexMode }]"
+                @click="regexMode = !regexMode"
+              >
+                .*
+              </a-button>
+            </a-tooltip>
+          </template>
         </a-input>
+
+        <!-- 搜索历史下拉 -->
+        <div v-if="searchHistory.length > 0 && !searchKeyword && searchInputFocused" class="search-history-dropdown">
+          <div class="history-header">
+            <span>搜索历史</span>
+            <a-button type="text" size="small" @click="clearSearchHistory">清空</a-button>
+          </div>
+          <div class="history-list">
+            <div
+              v-for="(item, index) in searchHistory"
+              :key="index"
+              class="history-item"
+              @click="useSearchHistory(item)"
+            >
+              {{ item }}
+            </div>
+          </div>
+        </div>
       </div>
       
       <div class="filter-bar">
@@ -488,6 +845,55 @@ onUnmounted(() => {
         </a-radio-group>
 
         <div class="actions-right">
+          <!-- 高级筛选 -->
+          <a-dropdown :trigger="['click']" v-model:open="advancedFilterVisible">
+            <a-tooltip title="高级筛选">
+              <a-button type="text" size="small" class="icon-btn" :class="{ 'filter-active': dateRange !== 'all' || wordCountRange !== 'all' }">
+                <FilterOutlined />
+              </a-button>
+            </a-tooltip>
+            <template #overlay>
+              <div class="advanced-filter-panel">
+                <div class="filter-section">
+                  <div class="filter-label">
+                    <CalendarOutlined /> 日期范围
+                  </div>
+                  <a-radio-group v-model:value="dateRange" size="small">
+                    <a-radio-button value="all">全部</a-radio-button>
+                    <a-radio-button value="today">今天</a-radio-button>
+                    <a-radio-button value="week">最近7天</a-radio-button>
+                    <a-radio-button value="month">最近30天</a-radio-button>
+                  </a-radio-group>
+                </div>
+                <div class="filter-section">
+                  <div class="filter-label">
+                    <FontSizeOutlined /> 字数范围
+                  </div>
+                  <a-radio-group v-model:value="wordCountRange" size="small">
+                    <a-radio-button value="all">全部</a-radio-button>
+                    <a-radio-button value="short">短文本(&lt;100)</a-radio-button>
+                    <a-radio-button value="medium">中等(100-500)</a-radio-button>
+                    <a-radio-button value="long">长文本(&gt;500)</a-radio-button>
+                  </a-radio-group>
+                </div>
+              </div>
+            </template>
+          </a-dropdown>
+
+          <!-- 批量操作按钮 -->
+          <a-tooltip :title="batchMode ? '退出批量模式' : '批量操作'">
+            <a-button
+              type="text"
+              size="small"
+              class="icon-btn"
+              :class="{ 'batch-active': batchMode }"
+              @click="toggleBatchMode"
+            >
+              <CheckSquareOutlined v-if="!batchMode" />
+              <CloseSquareOutlined v-else />
+            </a-button>
+          </a-tooltip>
+
           <a-dropdown :trigger="['click']">
             <a-tooltip title="设置保留条数">
               <a-button type="text" size="small" class="icon-btn setting-btn">
@@ -527,6 +933,42 @@ onUnmounted(() => {
           </a-popconfirm>
         </div>
       </div>
+
+      <!-- 批量操作栏 -->
+      <transition name="batch-bar">
+        <div v-if="batchMode" class="batch-action-bar">
+          <div class="batch-info">
+            <a-checkbox
+              :checked="batchSelectedIds.size === displayedItems.length && displayedItems.length > 0"
+              :indeterminate="batchSelectedIds.size > 0 && batchSelectedIds.size < displayedItems.length"
+              @change="toggleSelectAll"
+            >
+              已选择 {{ batchSelectedIds.size }} 项
+            </a-checkbox>
+          </div>
+          <div class="batch-actions">
+            <a-button size="small" @click="handleBatchCopy" :disabled="batchSelectedIds.size === 0">
+              <MergeCellsOutlined /> 合并复制
+            </a-button>
+            <a-button size="small" @click="handleBatchFavorite(true)" :disabled="batchSelectedIds.size === 0">
+              <StarOutlined /> 批量收藏
+            </a-button>
+            <a-button size="small" @click="handleBatchExport" :disabled="batchSelectedIds.size === 0">
+              <ExportOutlined /> 导出
+            </a-button>
+            <a-popconfirm
+              title="确定删除选中的项目吗？"
+              ok-text="确定"
+              cancel-text="取消"
+              @confirm="handleBatchDelete"
+            >
+              <a-button size="small" danger :disabled="batchSelectedIds.size === 0">
+                <DeleteOutlined /> 删除
+              </a-button>
+            </a-popconfirm>
+          </div>
+        </div>
+      </transition>
     </div>
 
     <!-- 主要内容区 -->
@@ -561,9 +1003,15 @@ onUnmounted(() => {
               v-for="item in displayedItems"
               :key="item.id"
               class="clipboard-card glass-effect"
-              :class="{ 'is-favorite': item.isFavorite }"
+              :class="{ 'is-favorite': item.isFavorite, 'is-selected': batchSelectedIds.has(item.id) }"
               @dblclick="handleDoubleClick(item)"
+              @click="batchMode && toggleItemSelection(item.id)"
             >
+              <!-- 批量选择复选框 -->
+              <div v-if="batchMode" class="batch-checkbox" @click.stop="toggleItemSelection(item.id)">
+                <a-checkbox :checked="batchSelectedIds.has(item.id)" />
+              </div>
+
               <!-- 卡片头部 -->
               <div class="card-header">
                 <div class="type-tag" :style="{ color: getTypeColor(item.type), backgroundColor: getTypeBgColor(item.type) }">
@@ -586,7 +1034,7 @@ onUnmounted(() => {
                 </div>
                 
                 <!-- 文本内容 -->
-                <div v-else class="text-content">
+                <div v-else class="text-content" @click.stop="showTextPreview(item)">
                   {{ item.content }}
                 </div>
                 
@@ -731,6 +1179,63 @@ onUnmounted(() => {
         <img :src="qrCodeDataUrl" alt="QR Code" />
         <div class="qrcode-text">{{ qrCodeContent }}</div>
       </div>
+    </a-modal>
+
+    <!-- 文本预览弹窗 -->
+    <a-modal
+      v-model:open="textPreviewVisible"
+      :title="textPreviewItem ? `${getTypeLabel(textPreviewItem.type)} - 预览` : '文本预览'"
+      width="80%"
+      centered
+      class="text-preview-modal"
+      @cancel="closeTextPreview"
+    >
+      <div class="text-preview-container">
+        <!-- 头部信息 -->
+        <div v-if="textPreviewItem" class="preview-header">
+          <div class="preview-meta">
+            <span class="meta-item">
+              <component :is="getTypeIcon(textPreviewItem.type)" />
+              {{ getTypeLabel(textPreviewItem.type) }}
+            </span>
+            <span class="meta-item">{{ formatTime(textPreviewItem.createdAt) }}</span>
+            <span class="meta-item">{{ textPreviewContent.length }} 字符</span>
+            <span class="meta-item">{{ getWordCount(textPreviewContent) }} 字</span>
+          </div>
+          <div v-if="textPreviewItem.note" class="preview-note">
+            <EditOutlined /> {{ textPreviewItem.note }}
+          </div>
+        </div>
+
+        <!-- 文本内容 -->
+        <div class="preview-content">
+          <pre>{{ textPreviewContent }}</pre>
+        </div>
+      </div>
+
+      <!-- 底部操作按钮 -->
+      <template #footer>
+        <div class="preview-footer">
+          <a-space>
+            <a-button @click="copyToClipboard(textPreviewItem)">
+              <CopyOutlined /> 复制
+            </a-button>
+            <a-button v-if="textPreviewItem && textPreviewItem.type === 'url'" @click="openUrl(textPreviewContent)">
+              <GlobalOutlined /> 打开链接
+            </a-button>
+            <a-button v-if="textPreviewItem && textPreviewItem.type === 'text'" @click="searchInBrowser(textPreviewContent)">
+              <SearchOutlined /> 搜索
+            </a-button>
+            <a-button @click="showQRCode(textPreviewItem)">
+              <QrcodeOutlined /> 二维码
+            </a-button>
+            <a-button @click="downloadItem(textPreviewItem)">
+              <DownloadOutlined /> 下载
+            </a-button>
+            <a-button @click="closeTextPreview">关闭</a-button>
+          </a-space>
+        </div>
+      </template>
     </a-modal>
   </div>
 </template>
@@ -1171,5 +1676,251 @@ onUnmounted(() => {
   color: var(--text-tertiary);
   font-size: 12px;
   margin-top: 10px;
+}
+
+/* ========== 新增功能样式 ========== */
+
+/* 正则模式切换按钮 */
+.regex-toggle {
+  font-family: monospace;
+  font-weight: bold;
+  font-size: 14px;
+  color: var(--text-tertiary);
+  padding: 0 8px;
+  transition: all 0.3s;
+}
+
+.regex-toggle:hover {
+  color: var(--primary-color);
+}
+
+.regex-toggle.regex-active {
+  color: var(--primary-color);
+  background: rgba(79, 172, 254, 0.1);
+}
+
+/* 搜索历史下拉 */
+.search-bar {
+  position: relative;
+}
+
+.search-history-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+  max-height: 200px;
+  overflow: hidden;
+}
+
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.history-list {
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.history-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-primary);
+  transition: background 0.2s;
+}
+
+.history-item:hover {
+  background: rgba(79, 172, 254, 0.1);
+}
+
+/* 高级筛选面板 */
+.advanced-filter-panel {
+  background: white;
+  border-radius: 8px;
+  padding: 16px;
+  min-width: 400px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.filter-section {
+  margin-bottom: 16px;
+}
+
+.filter-section:last-child {
+  margin-bottom: 0;
+}
+
+.filter-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.filter-active {
+  color: var(--primary-color) !important;
+  background: rgba(79, 172, 254, 0.1) !important;
+}
+
+/* 批量操作栏 */
+.batch-action-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: linear-gradient(to right, rgba(79, 172, 254, 0.1), rgba(79, 172, 254, 0.05));
+  border-radius: 8px;
+  margin-top: 12px;
+}
+
+.batch-info {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.batch-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.batch-active {
+  color: var(--primary-color) !important;
+  background: rgba(79, 172, 254, 0.15) !important;
+}
+
+/* 批量操作栏动画 */
+.batch-bar-enter-active,
+.batch-bar-leave-active {
+  transition: all 0.3s ease;
+}
+
+.batch-bar-enter-from,
+.batch-bar-leave-to {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+/* 批量选择复选框 */
+.batch-checkbox {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 10;
+  background: white;
+  border-radius: 4px;
+  padding: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* 选中状态的卡片 */
+.clipboard-card.is-selected {
+  border-color: var(--primary-color) !important;
+  background: rgba(79, 172, 254, 0.05) !important;
+  transform: scale(0.98);
+}
+
+/* 批量模式下的卡片 */
+.clipboard-card {
+  cursor: pointer;
+  user-select: none;
+}
+
+/* 文本内容可点击提示 */
+.text-content {
+  cursor: zoom-in;
+  transition: all 0.2s;
+}
+
+.text-content:hover {
+  background: rgba(79, 172, 254, 0.05);
+  border-radius: 4px;
+}
+
+/* 文本预览弹窗 */
+.text-preview-modal :deep(.ant-modal-content) {
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.text-preview-container {
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.preview-header {
+  padding: 16px;
+  background: linear-gradient(to right, rgba(79, 172, 254, 0.05), rgba(79, 172, 254, 0.02));
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.preview-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.meta-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.preview-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 6px;
+  margin-top: 8px;
+  border-left: 3px solid var(--primary-color);
+}
+
+.preview-content {
+  padding: 16px;
+  background: #f8fafc;
+  border-radius: 8px;
+  min-height: 200px;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.preview-content pre {
+  margin: 0;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.preview-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 0;
 }
 </style>

@@ -36,7 +36,9 @@ import {
   updateNote,
   getFavorites,
   getNonFavorites,
-  imageDataToDataUrl
+  imageDataToDataUrl,
+  maxHistoryLimit,
+  setMaxHistoryLimit
 } from '../composables/useClipboardStore';
 
 const loading = ref(true); // 默认开启加载状态
@@ -406,6 +408,16 @@ const handleClearAll = () => {
   message.success('已清空所有记录');
 };
 
+// 处理存储限制变更
+const handleLimitChange = async (value) => {
+  try {
+    await setMaxHistoryLimit(value);
+    message.success(`已设置存储上限为 ${value} 条`);
+  } catch (error) {
+    message.error('设置失败: ' + error);
+  }
+};
+
 // 滚动加载更多
 const loadMore = () => {
   if (visibleCount.value < filteredItems.value.length) {
@@ -476,6 +488,19 @@ onUnmounted(() => {
         </a-radio-group>
 
         <div class="actions-right">
+          <a-select
+            :value="maxHistoryLimit"
+            style="width: 110px; margin-right: 8px;"
+            size="small"
+            @update:value="handleLimitChange"
+          >
+            <a-select-option :value="100">保留100条</a-select-option>
+            <a-select-option :value="200">保留200条</a-select-option>
+            <a-select-option :value="300">保留300条</a-select-option>
+            <a-select-option :value="400">保留400条</a-select-option>
+            <a-select-option :value="500">保留500条</a-select-option>
+          </a-select>
+
           <a-tooltip title="清空非收藏历史">
             <a-button type="text" @click="handleClearHistory" class="icon-btn">
               <ClearOutlined />

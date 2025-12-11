@@ -4,7 +4,8 @@ import { invoke } from '@tauri-apps/api/core';
 
 const STORE_FILE = 'clipboard-manager.json';
 const ITEMS_KEY = 'clipboardItems';
-const MAX_HISTORY = 100; // 最多保存100条历史记录
+const MAX_HISTORY_KEY = 'maxHistory';
+export const maxHistoryLimit = ref(100); // 默认100条
 
 let store = null;
 
@@ -91,6 +92,13 @@ function imageDataToDataUrl(imageData) {
 export async function loadClipboardItems() {
   try {
     const storeInstance = await initStore();
+    
+    // 加载历史记录限制
+    const savedLimit = await storeInstance.get(MAX_HISTORY_KEY);
+    if (savedLimit) {
+      maxHistoryLimit.value = savedLimit;
+    }
+
     const savedItems = await storeInstance.get(ITEMS_KEY);
     clipboardItems.value = savedItems || [];
     return clipboardItems.value;
@@ -190,28 +198,38 @@ export async function addClipboardItem(clipboardData) {
   const favorites = clipboardItems.value.filter(item => item.isFavorite);
   const nonFavorites = clipboardItems.value.filter(item => !item.isFavorite);
 
-  // 图片类型最多保存20条，文本类型保存100条
-  const imageItems = nonFavorites.filter(item => item.type === 'image');
-  const textItems = nonFavorites.filter(item => item.type !== 'image');
-
-  let filteredNonFavorites = nonFavorites;
-  if (imageItems.length > 20) {
-    // 只保留最新的20条图片
-    filteredNonFavorites = [
-      ...imageItems.slice(0, 20),
-      ...textItems
-    ];
-  }
-
-  if (filteredNonFavorites.length > MAX_HISTORY) {
-    // 只保留最新的 MAX_HISTORY 条非收藏记录
+  // 根据用户设置的限制进行截断
+  if (nonFavorites.length > maxHistoryLimit.value) {
+    // 只保留最新的 maxHistoryLimit 条非收藏记录
     clipboardItems.value = [
-      ...filteredNonFavorites.slice(0, MAX_HISTORY),
+      ...nonFavorites.slice(0, maxHistoryLimit.value),
       ...favorites
     ];
   }
 
   await saveClipboardItems();
+}
+
+// 设置最大历史记录数
+export async function setMaxHistoryLimit(limit) {
+  maxHistoryLimit.value = limit;
+  
+  // 保存设置
+  const storeInstance = await initStore();
+  await storeInstance.set(MAX_HISTORY_KEY, limit);
+  await storeInstance.save();
+  
+  // 立即应用新的限制
+  const favorites = clipboardItems.value.filter(item => item.isFavorite);
+  const nonFavorites = clipboardItems.value.filter(item => !item.isFavorite);
+  
+  if (nonFavorites.length > limit) {
+    clipboardItems.value = [
+      ...nonFavorites.slice(0, limit),
+      ...favorites
+    ];
+    await saveClipboardItems();
+  }
 }
 
 // 删除单个项目

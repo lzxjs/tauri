@@ -43,7 +43,7 @@ function detectContentType(content, isImage = false) {
   return 'text';
 }
 
-// 将图片数据转换为 Data URL
+// 将图片数据转换为 Data URL (带压缩)
 function imageDataToDataUrl(imageData) {
   if (!imageData) return null;
 
@@ -72,8 +72,19 @@ function imageDataToDataUrl(imageData) {
   const imageDataObj = new ImageData(bytes, width, height);
   ctx.putImageData(imageDataObj, 0, 0);
 
-  // 转换为 Data URL
-  return canvas.toDataURL('image/png');
+  // 检查是否需要压缩
+  // 原始数据大小约为 base64Data.length * 0.75 字节
+  const approximateSize = base64Data.length * 0.75;
+  const MAX_SIZE = 800 * 1024; // 800KB
+
+  if (approximateSize > MAX_SIZE) {
+    // 压缩图片：使用 jpeg 格式并降低质量
+    // 计算缩放比例：简单估算，尝试将质量降低到 0.7
+    return canvas.toDataURL('image/jpeg', 0.7);
+  } else {
+    // 小图保持 png 格式以获得更好质量
+    return canvas.toDataURL('image/png');
+  }
 }
 
 // 加载剪贴板历史
@@ -119,14 +130,25 @@ export async function addClipboardItem(clipboardData) {
     // 新版本：{ type: 'Text'/'Image', data: '...' }
     if (clipboardData.type === 'Image') {
       isImage = true;
-      imageData = clipboardData.data;
-
+      // 检查图片大小并在存储前尝试压缩
+      // 注意：这里我们只做简单的预处理，真正的压缩发生在 imageDataToDataUrl (展示层)
+      // 或者我们可以修改后端传过来的数据结构，让后端直接存压缩后的？
+      // 目前为了不改动后端，我们在存储前不做有损压缩，只在展示和保存时处理
+      // 但为了减少内存占用，我们可以在这里就做一次转换
+      
+      const rawData = clipboardData.data;
+      
       // 解析图片尺寸
-      const parts = imageData.split(',');
+      const parts = rawData.split(',');
       if (parts.length === 3) {
         width = parseInt(parts[0]);
         height = parseInt(parts[1]);
         content = `图片 (${width}x${height})`;
+        
+        // 优化：如果是超大图片，我们在这里可以考虑直接存储压缩后的 base64
+        // 但由于 imageDataToDataUrl 需要特定的格式 (width,height,base64)，
+        // 我们保持原样存储，但在显示时进行压缩
+        imageData = rawData;
       }
     } else if (clipboardData.type === 'Text') {
       content = clipboardData.data;

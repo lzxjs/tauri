@@ -39,7 +39,7 @@ import {
   imageDataToDataUrl
 } from '../composables/useClipboardStore';
 
-const loading = ref(false);
+const loading = ref(true); // 默认开启加载状态
 const searchKeyword = ref('');
 const activeTab = ref('all'); // 'all' | 'favorites'
 const filterType = ref('all'); // 'all' | 'text' | 'image' | 'url' | 'email'
@@ -430,6 +430,11 @@ onMounted(() => {
 
   // 确保 DOM 更新后观察元素
   nextTick(() => {
+    // 模拟一个小延迟以展示 loading 效果，避免白屏
+    setTimeout(() => {
+      loading.value = false;
+    }, 300);
+
     if (loadTrigger.value) {
       observer.observe(loadTrigger.value);
     }

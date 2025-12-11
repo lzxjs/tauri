@@ -3,7 +3,10 @@ import { computed, ref, onMounted, onUnmounted, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { message } from "ant-design-vue";
+import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { startNetworkTrafficService, stopNetworkTrafficService } from "./services/networkTrafficService";
+import { loadClipboardItems, addClipboardItem } from './composables/useClipboardStore';
 
 const route = useRoute();
 const router = useRouter();
@@ -25,6 +28,9 @@ watch(
 // 开机启动状态
 const autostartEnabled = ref(false);
 const autostartLoading = ref(false);
+
+// 剪贴板监听取消函数
+let unlistenClipboard = null;
 
 // 处理菜单点击，使用 vue-router 切换路径
 const handleMenuClick = ({ key }) => {
@@ -64,6 +70,45 @@ const toggleAutostart = async (checked) => {
   }
 };
 
+// 启动剪贴板监听服务
+const startClipboardMonitoring = async () => {
+  try {
+    // 加载历史剪贴板数据
+    await loadClipboardItems();
+    console.log('[ClipboardService] 历史数据已加载');
+
+    // 启动后端监听
+    await invoke('start_clipboard_monitor');
+    console.log('[ClipboardService] 后端监听已启动');
+
+    // 监听剪贴板变化事件
+    unlistenClipboard = await listen('clipboard-changed', async (event) => {
+      console.log('[ClipboardService] 收到剪贴板变化事件:', event.payload);
+      const content = event.payload;
+      await addClipboardItem(content);
+      console.log('[ClipboardService] 剪贴板项已添加');
+    });
+
+    console.log('[ClipboardService] 剪贴板监听已启动');
+  } catch (error) {
+    console.error('[ClipboardService] 启动剪贴板监听失败:', error);
+  }
+};
+
+// 停止剪贴板监听服务
+const stopClipboardMonitoring = async () => {
+  try {
+    await invoke('stop_clipboard_monitor');
+    if (unlistenClipboard) {
+      unlistenClipboard();
+      unlistenClipboard = null;
+    }
+    console.log('[ClipboardService] 剪贴板监听已停止');
+  } catch (error) {
+    console.error('[ClipboardService] 停止剪贴板监听失败:', error);
+  }
+};
+
 // 组件挂载时检查状态
 onMounted(() => {
   checkAutostartStatus();
@@ -78,11 +123,15 @@ onMounted(() => {
 
   // 启动全局网络流量统计服务
   startNetworkTrafficService();
+
+  // 启动全局剪贴板监听服务
+  startClipboardMonitoring();
 });
 
 // 组件卸载时停止服务
 onUnmounted(() => {
   stopNetworkTrafficService();
+  stopClipboardMonitoring();
 });
 </script>
 

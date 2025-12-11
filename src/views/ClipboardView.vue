@@ -1,7 +1,6 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-shell';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeTextFile, writeFile } from '@tauri-apps/plugin-fs';
@@ -29,8 +28,6 @@ import {
 } from '@ant-design/icons-vue';
 import {
   clipboardItems,
-  loadClipboardItems,
-  addClipboardItem,
   removeClipboardItem,
   removeClipboardItems,
   clearHistory,
@@ -42,7 +39,7 @@ import {
   imageDataToDataUrl
 } from '../composables/useClipboardStore';
 
-const loading = ref(true);
+const loading = ref(false);
 const searchKeyword = ref('');
 const activeTab = ref('all'); // 'all' | 'favorites'
 const filterType = ref('all'); // 'all' | 'text' | 'image' | 'url' | 'email'
@@ -59,8 +56,6 @@ const editingNote = ref('');
 const qrCodeVisible = ref(false);
 const qrCodeDataUrl = ref('');
 const qrCodeContent = ref('');
-
-let unlistenClipboard = null;
 
 // 过滤后的列表
 const filteredItems = computed(() => {
@@ -374,50 +369,7 @@ const handleClearAll = () => {
   message.success('已清空所有记录');
 };
 
-// 启动剪贴板监听
-const startMonitoring = async () => {
-  try {
-    await invoke('start_clipboard_monitor');
-    unlistenClipboard = await listen('clipboard-changed', async (event) => {
-      const content = event.payload;
-      await addClipboardItem(content);
-    });
-    console.log('剪贴板监听已启动');
-  } catch (error) {
-    console.error('启动剪贴板监听失败:', error);
-    message.error('启动监听失败: ' + error);
-  }
-};
-
-// 停止剪贴板监听
-const stopMonitoring = async () => {
-  try {
-    await invoke('stop_clipboard_monitor');
-    if (unlistenClipboard) {
-      unlistenClipboard();
-      unlistenClipboard = null;
-    }
-    console.log('剪贴板监听已停止');
-  } catch (error) {
-    console.error('停止剪贴板监听失败:', error);
-  }
-};
-
-onMounted(async () => {
-  loading.value = true;
-  try {
-    await loadClipboardItems();
-    await startMonitoring();
-  } catch (error) {
-    console.error('初始化失败:', error);
-  } finally {
-    loading.value = false;
-  }
-});
-
-onUnmounted(() => {
-  stopMonitoring();
-});
+// 不需要 onMounted，因为数据已在 App.vue 中加载
 </script>
 
 <template>

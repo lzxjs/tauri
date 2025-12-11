@@ -431,6 +431,7 @@ pub fn run() {
                         match event.id.as_ref() {
                             "show" => {
                                 if let Some(window) = app.get_webview_window("main") {
+                                    let _ = window.unminimize();
                                     let _ = window.show();
                                     let _ = window.set_focus();
                                 }
@@ -449,6 +450,7 @@ pub fn run() {
                                 if button == MouseButton::Left {
                                     let app = tray.app_handle();
                                     if let Some(window) = app.get_webview_window("main") {
+                                        let _ = window.unminimize();
                                         let _ = window.show();
                                         let _ = window.set_focus();
                                     }
@@ -462,6 +464,7 @@ pub fn run() {
                                         if window.is_visible().unwrap_or(false) {
                                             let _ = window.hide();
                                         } else {
+                                            let _ = window.unminimize();
                                             let _ = window.show();
                                             let _ = window.set_focus();
                                         }

@@ -118,6 +118,10 @@ onUnmounted(() => {
               <span class="menu-icon-wrapper">⏺️</span>
               <span class="menu-text">动作录制</span>
             </a-menu-item>
+            <a-menu-item key="clipboard">
+              <span class="menu-icon-wrapper">📋</span>
+              <span class="menu-text">剪贴板</span>
+            </a-menu-item>
             <!-- <a-menu-item key="scraper">
               <span class="menu-icon-wrapper">🕷️</span>
               <span class="menu-text">网页爬虫</span>

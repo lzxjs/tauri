@@ -1,3 +1,4 @@
+mod clipboard;
 mod monitor;
 mod player;
 mod recorder;
@@ -406,7 +407,14 @@ pub fn run() {
             get_recorder_status,
             get_recorded_events,
             clear_recorded_events,
-            set_recorded_events
+            set_recorded_events,
+            clipboard::get_clipboard_text,
+            clipboard::set_clipboard_text,
+            clipboard::get_clipboard_image,
+            clipboard::set_clipboard_image,
+            clipboard::get_clipboard_content,
+            clipboard::start_clipboard_monitor,
+            clipboard::stop_clipboard_monitor
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-shell';
 import { save } from '@tauri-apps/plugin-dialog';
@@ -46,6 +46,15 @@ const filterType = ref('all'); // 'all' | 'text' | 'image' | 'url' | 'email'
 const selectedItems = ref([]);
 const previewImage = ref(null); // 图片预览
 const previewVisible = ref(false); // 预览对话框显示状态
+const listContainerRef = ref(null);
+const loadTrigger = ref(null);
+
+// 分页相关
+const pageSize = 20;
+const visibleCount = ref(pageSize);
+
+// 图片缓存
+const imageCache = new Map();
 
 // 备注编辑相关
 const noteModalVisible = ref(false);
@@ -78,6 +87,24 @@ const filteredItems = computed(() => {
   }
 
   return items;
+});
+
+// 分页后的显示列表
+const displayedItems = computed(() => {
+  return filteredItems.value.slice(0, visibleCount.value);
+});
+
+// 监听筛选条件变化，重置分页
+watch([() => activeTab.value, () => filterType.value, () => searchKeyword.value], () => {
+  visibleCount.value = pageSize;
+  // 清理部分缓存以释放内存
+  if (imageCache.size > 100) {
+    imageCache.clear();
+  }
+  // 滚动回顶部
+  if (listContainerRef.value) {
+    listContainerRef.value.scrollTop = 0;
+  }
 });
 
 // 统计信息
@@ -143,10 +170,20 @@ const getTypeLabel = (type) => {
   }
 };
 
-// 获取图片 Data URL
+// 获取图片 Data URL (带缓存)
 const getImageDataUrl = (item) => {
   if (item.type !== 'image' || !item.imageData) return null;
-  return imageDataToDataUrl(item.imageData);
+  
+  // 优先从缓存获取
+  if (imageCache.has(item.id)) {
+    return imageCache.get(item.id);
+  }
+  
+  const url = imageDataToDataUrl(item.imageData);
+  if (url) {
+    imageCache.set(item.id, url);
+  }
+  return url;
 };
 
 // 显示图片预览
@@ -369,7 +406,42 @@ const handleClearAll = () => {
   message.success('已清空所有记录');
 };
 
-// 不需要 onMounted，因为数据已在 App.vue 中加载
+// 滚动加载更多
+const loadMore = () => {
+  if (visibleCount.value < filteredItems.value.length) {
+    visibleCount.value += pageSize;
+  }
+};
+
+// 观察器实例
+let observer = null;
+
+onMounted(() => {
+  // 设置 IntersectionObserver 实现无限滚动
+  observer = new IntersectionObserver((entries) => {
+    if (entries[0].isIntersecting) {
+      loadMore();
+    }
+  }, {
+    root: listContainerRef.value,
+    threshold: 0.1,
+    rootMargin: '100px' // 提前加载
+  });
+
+  // 确保 DOM 更新后观察元素
+  nextTick(() => {
+    if (loadTrigger.value) {
+      observer.observe(loadTrigger.value);
+    }
+  });
+});
+
+onUnmounted(() => {
+  if (observer) {
+    observer.disconnect();
+  }
+  imageCache.clear();
+});
 </script>
 
 <template>
@@ -435,7 +507,7 @@ const handleClearAll = () => {
         </a-tab-pane>
       </a-tabs>
 
-      <div class="list-container">
+      <div class="list-container" ref="listContainerRef">
         <a-spin :spinning="loading">
           <div v-if="filteredItems.length === 0" class="empty-state">
             <a-empty :description="searchKeyword ? '未找到相关记录' : '暂无剪贴板记录'">
@@ -449,7 +521,7 @@ const handleClearAll = () => {
 
           <transition-group name="list" tag="div" class="items-grid" v-else>
             <div
-              v-for="item in filteredItems"
+              v-for="item in displayedItems"
               :key="item.id"
               class="clipboard-card glass-effect"
               :class="{ 'is-favorite': item.isFavorite }"
@@ -560,6 +632,15 @@ const handleClearAll = () => {
               </div>
             </div>
           </transition-group>
+          <!-- 加载触发器 -->
+          <div
+            v-if="filteredItems.length > 0"
+            ref="loadTrigger"
+            class="load-trigger"
+          >
+            <span v-if="visibleCount < filteredItems.length" class="loading-text">加载中...</span>
+            <span v-else class="no-more-text">没有更多了</span>
+          </div>
         </a-spin>
       </div>
     </div>
@@ -970,5 +1051,15 @@ const handleClearAll = () => {
   max-width: 100%;
   max-height: 60px;
   overflow-y: auto;
+}
+.load-trigger {
+  height: 40px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  margin-top: 10px;
 }
 </style>

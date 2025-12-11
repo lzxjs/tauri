@@ -155,9 +155,14 @@ onUnmounted(() => {
             mode="inline"
             @click="handleMenuClick"
             class="custom-menu"
-          >            <a-menu-item key="system">
+          >            
+            <a-menu-item key="system">
               <span class="menu-icon-wrapper">🖥️</span>
               <span class="menu-text">系统监控</span>
+            </a-menu-item>
+            <a-menu-item key="clipboard">
+              <span class="menu-icon-wrapper">📋</span>
+              <span class="menu-text">剪贴板</span>
             </a-menu-item>
             <a-menu-item key="launcher">
               <span class="menu-icon-wrapper">🚀</span>
@@ -166,10 +171,6 @@ onUnmounted(() => {
            <a-menu-item key="recorder">
               <span class="menu-icon-wrapper">⏺️</span>
               <span class="menu-text">动作录制</span>
-            </a-menu-item>
-            <a-menu-item key="clipboard">
-              <span class="menu-icon-wrapper">📋</span>
-              <span class="menu-text">剪贴板</span>
             </a-menu-item>
             <!-- <a-menu-item key="scraper">
               <span class="menu-icon-wrapper">🕷️</span>

@@ -337,17 +337,6 @@ const openUrl = async (url) => {
   }
 };
 
-// 使用搜索引擎搜索
-const searchInBrowser = async (text) => {
-  try {
-    const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(text)}`;
-    await open(searchUrl);
-    message.success('正在打开搜索...');
-  } catch (error) {
-    message.error('搜索失败: ' + error);
-  }
-};
-
 // 生成二维码
 const showQRCode = async (item) => {
   try {
@@ -1096,12 +1085,6 @@ onUnmounted(() => {
                       <GlobalOutlined />
                     </a-button>
                   </a-tooltip>
-                  
-                  <a-tooltip v-if="item.type === 'text'" title="在浏览器搜索">
-                    <a-button type="text" size="small" class="action-btn" @click.stop="searchInBrowser(item.content)">
-                      <SearchOutlined />
-                    </a-button>
-                  </a-tooltip>
                 </div>
 
                 <a-popconfirm
@@ -1222,9 +1205,6 @@ onUnmounted(() => {
             </a-button>
             <a-button v-if="textPreviewItem && textPreviewItem.type === 'url'" @click="openUrl(textPreviewContent)">
               <GlobalOutlined /> 打开链接
-            </a-button>
-            <a-button v-if="textPreviewItem && textPreviewItem.type === 'text'" @click="searchInBrowser(textPreviewContent)">
-              <SearchOutlined /> 搜索
             </a-button>
             <a-button @click="showQRCode(textPreviewItem)">
               <QrcodeOutlined /> 二维码

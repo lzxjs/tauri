@@ -367,6 +367,7 @@ pub fn run() {
     start_monitor(Arc::clone(&recorder), Arc::clone(&player));
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::default().build())

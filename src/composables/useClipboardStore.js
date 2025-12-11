@@ -5,7 +5,7 @@ import { invoke } from '@tauri-apps/api/core';
 const STORE_FILE = 'clipboard-manager.json';
 const ITEMS_KEY = 'clipboardItems';
 const MAX_HISTORY_KEY = 'maxHistory';
-export const maxHistoryLimit = ref(100); // 默认100条
+export const maxHistoryLimit = ref(300); // 默认300条
 
 let store = null;
 

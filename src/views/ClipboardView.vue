@@ -488,18 +488,25 @@ onUnmounted(() => {
         </a-radio-group>
 
         <div class="actions-right">
-          <a-select
-            :value="maxHistoryLimit"
-            style="width: 110px; margin-right: 8px;"
-            size="small"
-            @update:value="handleLimitChange"
-          >
-            <a-select-option :value="100">保留100条</a-select-option>
-            <a-select-option :value="200">保留200条</a-select-option>
-            <a-select-option :value="300">保留300条</a-select-option>
-            <a-select-option :value="400">保留400条</a-select-option>
-            <a-select-option :value="500">保留500条</a-select-option>
-          </a-select>
+          <a-dropdown :trigger="['click']">
+            <a-tooltip title="设置保留条数">
+              <a-button type="text" size="small" class="icon-btn setting-btn">
+                <span class="limit-text">{{ maxHistoryLimit }}条</span>
+                <AppstoreOutlined />
+              </a-button>
+            </a-tooltip>
+            <template #overlay>
+              <a-menu @click="({ key }) => handleLimitChange(key)" :selectedKeys="[maxHistoryLimit]">
+                <a-menu-item :key="100">保留 100 条</a-menu-item>
+                <a-menu-item :key="200">保留 200 条</a-menu-item>
+                <a-menu-item :key="300">保留 300 条</a-menu-item>
+                <a-menu-item :key="400">保留 400 条</a-menu-item>
+                <a-menu-item :key="500">保留 500 条</a-menu-item>
+              </a-menu>
+            </template>
+          </a-dropdown>
+
+          <div class="divider-vertical"></div>
 
           <a-tooltip title="清空非收藏历史">
             <a-button type="text" @click="handleClearHistory" class="icon-btn">
@@ -696,14 +703,20 @@ onUnmounted(() => {
       @ok="saveNote"
       centered
       :maskClosable="false"
+      class="custom-modal"
+      ok-text="保存"
+      cancel-text="取消"
     >
-      <a-textarea
-        v-model:value="editingNote"
-        placeholder="为此记录添加备注..."
-        :rows="4"
-        show-count
-        :maxlength="100"
-      />
+      <div class="note-editor-wrapper">
+        <a-textarea
+          v-model:value="editingNote"
+          placeholder="写点什么备注一下..."
+          :rows="4"
+          show-count
+          :maxlength="100"
+          class="custom-textarea"
+        />
+      </div>
     </a-modal>
 
     <!-- 二维码弹窗 -->
@@ -772,11 +785,23 @@ onUnmounted(() => {
 .actions-right {
   display: flex;
   gap: 4px;
+  align-items: center;
+}
+
+.divider-vertical {
+  width: 1px;
+  height: 16px;
+  background-color: rgba(0, 0, 0, 0.06);
+  margin: 0 4px;
 }
 
 .icon-btn {
   color: var(--text-secondary);
   transition: all 0.3s;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .icon-btn:hover {
@@ -784,9 +809,55 @@ onUnmounted(() => {
   color: var(--primary-color);
 }
 
+.setting-btn {
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+}
+
+.limit-text {
+  font-weight: 500;
+}
+
 .icon-btn.ant-btn-dangerous:hover {
   color: #ff4d4f;
   background: rgba(255, 77, 79, 0.1);
+}
+
+/* Modal 自定义 */
+.custom-modal :deep(.ant-modal-content) {
+  border-radius: 16px;
+  box-shadow: var(--box-shadow);
+  padding: 24px;
+}
+
+.custom-modal :deep(.ant-modal-header) {
+  margin-bottom: 16px;
+}
+
+.custom-modal :deep(.ant-modal-title) {
+  font-weight: 600;
+}
+
+.note-editor-wrapper {
+  padding: 4px 0;
+}
+
+.custom-textarea {
+  border-radius: 8px;
+  padding: 12px;
+  border-color: rgba(0,0,0,0.1);
+  resize: none;
+  background: #f8fafc;
+  transition: all 0.3s;
+}
+
+.custom-textarea:focus {
+  background: #fff;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px rgba(79, 172, 254, 0.1);
 }
 
 /* 主要内容区 */
@@ -840,22 +911,23 @@ onUnmounted(() => {
 
 /* 卡片样式 */
 .clipboard-card {
-  border-radius: 12px;
+  border-radius: 16px; /* 更圆润的边角 */
   padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  border: 1px solid rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.8); /* 稍微增加不透明度 */
   position: relative;
   overflow: hidden;
-  height: 200px; /* 固定高度，统一视觉 */
+  height: 200px;
+  background: rgba(255, 255, 255, 0.4); /* 默认微透背景 */
 }
 
 .clipboard-card:hover {
-  transform: translateY(-4px);
-  box-shadow: var(--box-shadow-hover);
-  border-color: rgba(79, 172, 254, 0.3);
+  transform: translateY(-4px) scale(1.01); /* 轻微放大 */
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.01); /* 更现代的阴影 */
+  border-color: rgba(79, 172, 254, 0.4);
   background: #fff;
 }
 
@@ -981,23 +1053,31 @@ onUnmounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding-top: 8px;
-  border-top: 1px solid rgba(0,0,0,0.03);
-  margin-top: auto; /* 确保在底部 */
+  padding-top: 10px;
+  border-top: 1px solid rgba(0,0,0,0.04);
+  margin-top: auto;
 }
 
 .action-group {
   display: flex;
-  gap: 4px;
+  gap: 2px; /* 稍微紧凑 */
 }
 
 .action-btn {
   color: var(--text-secondary);
+  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
 }
 
 .action-btn:hover {
   color: var(--primary-color);
-  background: rgba(79, 172, 254, 0.1);
+  background: rgba(79, 172, 254, 0.15);
+  transform: scale(1.1);
 }
 
 .favorite-active {

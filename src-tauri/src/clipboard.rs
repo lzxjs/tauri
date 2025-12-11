@@ -8,6 +8,8 @@ use serde::Serialize;
 
 // 全局剪贴板监听状态
 static CLIPBOARD_MONITOR_RUNNING: Mutex<bool> = Mutex::new(false);
+// 全局剪贴板访问锁 (避免多线程竞争导致 os error 1418)
+static CLIPBOARD_LOCK: Mutex<()> = Mutex::new(());
 
 // 剪贴板内容类型
 #[derive(Debug, Clone, Serialize)]
@@ -20,6 +22,7 @@ pub enum ClipboardContent {
 /// 获取当前剪贴板文本内容
 #[tauri::command]
 pub fn get_clipboard_text() -> Result<String, String> {
+    let _lock = CLIPBOARD_LOCK.lock().map_err(|e| e.to_string())?;
     let mut clipboard = Clipboard::new().map_err(|e| format!("无法访问剪贴板: {}", e))?;
 
     clipboard
@@ -30,6 +33,7 @@ pub fn get_clipboard_text() -> Result<String, String> {
 /// 获取当前剪贴板图片内容（Base64编码）
 #[tauri::command]
 pub fn get_clipboard_image() -> Result<String, String> {
+    let _lock = CLIPBOARD_LOCK.lock().map_err(|e| e.to_string())?;
     let mut clipboard = Clipboard::new().map_err(|e| format!("无法访问剪贴板: {}", e))?;
 
     let image = clipboard
@@ -52,6 +56,7 @@ pub fn get_clipboard_image() -> Result<String, String> {
 /// 获取当前剪贴板内容（自动检测类型）
 #[tauri::command]
 pub fn get_clipboard_content() -> Result<ClipboardContent, String> {
+    let _lock = CLIPBOARD_LOCK.lock().map_err(|e| e.to_string())?;
     let mut clipboard = Clipboard::new().map_err(|e| format!("无法访问剪贴板: {}", e))?;
 
     // 优先尝试获取图片
@@ -75,6 +80,7 @@ pub fn get_clipboard_content() -> Result<ClipboardContent, String> {
 /// 设置剪贴板文本内容
 #[tauri::command]
 pub fn set_clipboard_text(text: String) -> Result<(), String> {
+    let _lock = CLIPBOARD_LOCK.lock().map_err(|e| e.to_string())?;
     let mut last_error = String::new();
 
     // 重试机制 (解决 os error 1418)
@@ -103,6 +109,7 @@ pub fn set_clipboard_text(text: String) -> Result<(), String> {
 /// 设置剪贴板图片内容（从Base64）
 #[tauri::command]
 pub fn set_clipboard_image(image_data: String) -> Result<(), String> {
+    let _lock = CLIPBOARD_LOCK.lock().map_err(|e| e.to_string())?;
     // 解析格式：width,height,base64data
     let parts: Vec<&str> = image_data.splitn(3, ',').collect();
     if parts.len() != 3 {
@@ -187,44 +194,56 @@ pub fn start_clipboard_monitor(app: AppHandle) -> Result<(), String> {
                 }
             }
 
-            // 优先检查图片
-            if let Ok(image) = clipboard.get_image() {
-                // 计算图片简单哈希（避免重复）
-                let image_hash = calculate_image_hash(&image);
-
-                if last_image_hash != Some(image_hash) {
-                    let width = image.width;
-                    let height = image.height;
-                    let bytes = image.bytes.into_owned();
-                    let base64_data = general_purpose::STANDARD.encode(&bytes);
-                    let image_data = format!("{},{},{}", width, height, base64_data);
-
-                    let content = ClipboardContent::Image(image_data);
-
-                    // 发送事件到前端
-                    if let Err(e) = app.emit("clipboard-changed", &content) {
-                        eprintln!("发送剪贴板事件失败: {}", e);
+            // 使用作用域来控制锁的生命周期
+            {
+                let _lock = match CLIPBOARD_LOCK.lock() {
+                    Ok(l) => l,
+                    Err(e) => {
+                        eprintln!("获取剪贴板锁失败: {}", e);
+                        thread::sleep(Duration::from_millis(500));
+                        continue;
                     }
+                };
 
-                    last_image_hash = Some(image_hash);
-                    last_text_content.clear(); // 清空文本缓存
-                }
-            }
-            // 如果没有图片，检查文本
-            else if let Ok(current_content) = clipboard.get_text() {
-                // 如果内容发生变化且不为空
-                if !current_content.is_empty() && current_content != last_text_content {
-                    let content = ClipboardContent::Text(current_content.clone());
+                // 优先检查图片
+                if let Ok(image) = clipboard.get_image() {
+                    // 计算图片简单哈希（避免重复）
+                    let image_hash = calculate_image_hash(&image);
 
-                    // 发送事件到前端
-                    if let Err(e) = app.emit("clipboard-changed", &content) {
-                        eprintln!("发送剪贴板事件失败: {}", e);
+                    if last_image_hash != Some(image_hash) {
+                        let width = image.width;
+                        let height = image.height;
+                        let bytes = image.bytes.into_owned();
+                        let base64_data = general_purpose::STANDARD.encode(&bytes);
+                        let image_data = format!("{},{},{}", width, height, base64_data);
+
+                        let content = ClipboardContent::Image(image_data);
+
+                        // 发送事件到前端
+                        if let Err(e) = app.emit("clipboard-changed", &content) {
+                            eprintln!("发送剪贴板事件失败: {}", e);
+                        }
+
+                        last_image_hash = Some(image_hash);
+                        last_text_content.clear(); // 清空文本缓存
                     }
-
-                    last_text_content = current_content;
-                    last_image_hash = None; // 清空图片缓存
                 }
-            }
+                // 如果没有图片，检查文本
+                else if let Ok(current_content) = clipboard.get_text() {
+                    // 如果内容发生变化且不为空
+                    if !current_content.is_empty() && current_content != last_text_content {
+                        let content = ClipboardContent::Text(current_content.clone());
+
+                        // 发送事件到前端
+                        if let Err(e) = app.emit("clipboard-changed", &content) {
+                            eprintln!("发送剪贴板事件失败: {}", e);
+                        }
+
+                        last_text_content = current_content;
+                        last_image_hash = None; // 清空图片缓存
+                    }
+                }
+            } // 锁在这里释放
 
             // 每500ms检查一次
             thread::sleep(Duration::from_millis(500));

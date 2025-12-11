@@ -3,7 +3,10 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-shell';
+import { save } from '@tauri-apps/plugin-dialog';
+import { writeTextFile, writeFile } from '@tauri-apps/plugin-fs';
 import { message } from 'ant-design-vue';
+import QRCode from 'qrcode';
 import {
   SearchOutlined,
   DeleteOutlined,
@@ -19,7 +22,10 @@ import {
   GlobalOutlined,
   FilterOutlined,
   AppstoreOutlined,
-  BarsOutlined
+  BarsOutlined,
+  QrcodeOutlined,
+  DownloadOutlined,
+  InfoCircleOutlined
 } from '@ant-design/icons-vue';
 import {
   clipboardItems,
@@ -48,6 +54,11 @@ const previewVisible = ref(false); // 预览对话框显示状态
 const noteModalVisible = ref(false);
 const editingItem = ref(null);
 const editingNote = ref('');
+
+// 二维码相关
+const qrCodeVisible = ref(false);
+const qrCodeDataUrl = ref('');
+const qrCodeContent = ref('');
 
 let unlistenClipboard = null;
 
@@ -203,6 +214,92 @@ const openUrl = async (url) => {
   } catch (error) {
     message.error('无法打开链接: ' + error);
   }
+};
+
+// 使用搜索引擎搜索
+const searchInBrowser = async (text) => {
+  try {
+    const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(text)}`;
+    await open(searchUrl);
+    message.success('正在打开搜索...');
+  } catch (error) {
+    message.error('搜索失败: ' + error);
+  }
+};
+
+// 生成二维码
+const showQRCode = async (item) => {
+  try {
+    const text = item.content;
+    qrCodeDataUrl.value = await QRCode.toDataURL(text, { width: 300, margin: 2 });
+    qrCodeContent.value = text;
+    qrCodeVisible.value = true;
+  } catch (error) {
+    message.error('生成二维码失败: ' + error);
+  }
+};
+
+// 下载文件
+const downloadItem = async (item) => {
+  try {
+    if (item.type === 'image') {
+      // 图片下载
+      const filePath = await save({
+        filters: [{
+          name: 'Image',
+          extensions: ['png']
+        }],
+        defaultPath: `clipboard_image_${Date.now()}.png`
+      });
+
+      if (!filePath) return;
+
+      // 使用 imageDataToDataUrl 获取完整的 PNG Data URL (data:image/png;base64,...)
+      const dataUrl = imageDataToDataUrl(item.imageData);
+      if (!dataUrl) throw new Error('无法转换图片数据');
+      
+      // 提取 base64 部分
+      const base64Data = dataUrl.split(',')[1];
+      const binaryString = atob(base64Data);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+
+      await writeFile(filePath, bytes);
+      message.success('图片已保存');
+    } else {
+      // 文本下载
+      const filePath = await save({
+        filters: [{
+          name: 'Text',
+          extensions: ['txt']
+        }],
+        defaultPath: `clipboard_text_${Date.now()}.txt`
+      });
+
+      if (!filePath) return;
+
+      await writeTextFile(filePath, item.content);
+      message.success('文本已保存');
+    }
+  } catch (error) {
+    message.error('保存失败: ' + error);
+  }
+};
+
+// 获取字数/字符数
+const getWordCount = (text) => {
+  if (!text) return 0;
+  // 简单统计：中文字符算一个，英文单词算一个
+  const cnMatch = text.match(/[\u4e00-\u9fa5]/g);
+  const cnCount = cnMatch ? cnMatch.length : 0;
+  
+  const enText = text.replace(/[\u4e00-\u9fa5]/g, ' ');
+  const enMatch = enText.match(/[a-zA-Z0-9]+/g);
+  const enCount = enMatch ? enMatch.length : 0;
+  
+  return cnCount + enCount;
 };
 
 // 打开备注编辑
@@ -431,6 +528,12 @@ onUnmounted(() => {
                 <div v-else class="text-content">
                   {{ item.content }}
                 </div>
+                
+                <!-- 文本统计信息 (仅文本类型显示) -->
+                <div v-if="item.type === 'text' || item.type === 'url' || item.type === 'email'" class="text-stats">
+                  <span class="stat-item">{{ item.content.length }} 字符</span>
+                  <span class="stat-item">{{ getWordCount(item.content) }} 字</span>
+                </div>
 
                 <!-- 备注显示 -->
                 <div v-if="item.note" class="note-display" @click.stop="openNoteModal(item)">
@@ -466,9 +569,28 @@ onUnmounted(() => {
                     </a-button>
                   </a-tooltip>
 
+                  <!-- 新增功能按钮 -->
+                  <a-tooltip title="保存文件">
+                    <a-button type="text" size="small" class="action-btn" @click.stop="downloadItem(item)">
+                      <DownloadOutlined />
+                    </a-button>
+                  </a-tooltip>
+
+                  <a-tooltip v-if="item.type !== 'image'" title="生成二维码">
+                    <a-button type="text" size="small" class="action-btn" @click.stop="showQRCode(item)">
+                      <QrcodeOutlined />
+                    </a-button>
+                  </a-tooltip>
+
                   <a-tooltip v-if="item.type === 'url'" title="打开链接">
                     <a-button type="text" size="small" class="action-btn" @click.stop="openUrl(item.content)">
                       <GlobalOutlined />
+                    </a-button>
+                  </a-tooltip>
+                  
+                  <a-tooltip v-if="item.type === 'text'" title="在浏览器搜索">
+                    <a-button type="text" size="small" class="action-btn" @click.stop="searchInBrowser(item.content)">
+                      <SearchOutlined />
                     </a-button>
                   </a-tooltip>
                 </div>
@@ -519,6 +641,20 @@ onUnmounted(() => {
         show-count
         :maxlength="100"
       />
+    </a-modal>
+
+    <!-- 二维码弹窗 -->
+    <a-modal
+      v-model:open="qrCodeVisible"
+      title="二维码"
+      :footer="null"
+      centered
+      width="360px"
+    >
+      <div class="qrcode-container">
+        <img :src="qrCodeDataUrl" alt="QR Code" />
+        <div class="qrcode-text">{{ qrCodeContent }}</div>
+      </div>
     </a-modal>
   </div>
 </template>
@@ -707,6 +843,15 @@ onUnmounted(() => {
   -webkit-box-orient: vertical;
   mask-image: linear-gradient(to bottom, black 80%, transparent 100%);
   -webkit-mask-image: linear-gradient(to bottom, black 80%, transparent 100%);
+  flex: 1; /* 让文本内容占据剩余空间，但不超过max-height限制 */
+}
+
+.text-stats {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  margin-top: 4px;
+  display: flex;
+  gap: 8px;
 }
 
 /* 图片预览小图 */
@@ -847,5 +992,31 @@ onUnmounted(() => {
   object-fit: contain;
   border-radius: 8px;
   box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+}
+
+/* 二维码容器 */
+.qrcode-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 10px;
+}
+
+.qrcode-container img {
+  width: 200px;
+  height: 200px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.qrcode-text {
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-align: center;
+  word-break: break-all;
+  max-width: 100%;
+  max-height: 60px;
+  overflow-y: auto;
 }
 </style>

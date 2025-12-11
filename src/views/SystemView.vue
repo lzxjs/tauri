@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, onUnmounted, computed } from "vue";
+import { ref, onMounted, onUnmounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { message } from "ant-design-vue";
 import {
@@ -10,36 +10,16 @@ import {
   ArrowUpOutlined,
   ArrowDownOutlined,
 } from "@ant-design/icons-vue";
-import {
-  currentNetworkSpeed,
-  getTrafficByDate
-} from "../services/networkTrafficService";
 
 const loading = ref(true);
 const systemInfo = ref(null);
 const cpuInfo = ref(null);
 const memoryInfo = ref(null);
 const diskInfo = ref([]);
-const networkInfo = ref([]);
-
-// 当前选中的日期索引（0=今天，1=昨天，...，6=6天前）
-const selectedDayIndex = ref(0);
+const networkSpeed = ref({ upload: 0, download: 0 });
 
 let timer = null;
-
-// 获取当前选中日期的流量数据
-const currentDayTraffic = computed(() => {
-  return getTrafficByDate(selectedDayIndex.value);
-});
-
-// 获取日期标签（今天、昨天、或具体日期）
-const getDateLabel = (daysAgo) => {
-  if (daysAgo === 0) return "今天";
-  if (daysAgo === 1) return "昨天";
-  const date = new Date();
-  date.setDate(date.getDate() - daysAgo);
-  return `${date.getMonth() + 1}/${date.getDate()}`;
-};
+let lastNetworkData = null;
 
 const formatBytes = (bytes) => {
   if (bytes === 0) return "0 B";
@@ -74,7 +54,21 @@ const fetchAllInfo = async (isInitial = false) => {
     cpuInfo.value = cpu;
     memoryInfo.value = memory;
     diskInfo.value = disks;
-    networkInfo.value = network;
+
+    // 计算网络速度
+    if (lastNetworkData && network.length > 0) {
+      let totalUpload = 0;
+      let totalDownload = 0;
+      network.forEach((iface, index) => {
+        const lastIface = lastNetworkData[index];
+        if (lastIface && lastIface.interface_name === iface.interface_name) {
+          totalDownload += iface.received_bytes - lastIface.received_bytes;
+          totalUpload += iface.transmitted_bytes - lastIface.transmitted_bytes;
+        }
+      });
+      networkSpeed.value = { upload: totalUpload, download: totalDownload };
+    }
+    lastNetworkData = network;
 
   } catch (error) {
     message.error("获取系统信息失败: " + error);
@@ -105,6 +99,88 @@ onUnmounted(() => {
 <template>
   <div class="system-view">
     <a-row :gutter="[24, 24]">
+            <!-- 网络监控卡片 -->
+      <a-col :xs="24">
+        <div class="card-wrapper">
+          <div class="card-header network-header">
+            <div class="icon-box">
+              <WifiOutlined />
+            </div>
+            <span class="card-title">网络监控</span>
+          </div>
+          <a-card :bordered="false" class="info-card custom-card">
+            <a-skeleton active :loading="loading" :paragraph="{ rows: 3 }">
+              <div class="network-container">
+                <!-- 实时速度 -->
+                <div class="network-speed-box">
+                  <div class="speed-item upload">
+                    <ArrowUpOutlined class="speed-icon" />
+                    <div class="speed-content">
+                      <span class="speed-label">上传速度</span>
+                      <span class="speed-value">{{ formatSpeed(networkSpeed.upload) }}</span>
+                    </div>
+                  </div>
+                  <div class="speed-item download">
+                    <ArrowDownOutlined class="speed-icon" />
+                    <div class="speed-content">
+                      <span class="speed-label">下载速度</span>
+                      <span class="speed-value">{{ formatSpeed(networkSpeed.download) }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </a-skeleton>
+          </a-card>
+        </div>
+      </a-col>
+      <!-- 内存信息卡片 -->
+      <a-col :xs="24" :lg="12">
+        <div class="card-wrapper">
+          <div class="card-header mem-header">
+             <div class="icon-box">
+              <HddOutlined />
+            </div>
+            <span class="card-title">内存使用</span>
+          </div>
+          <a-card :bordered="false" class="info-card custom-card">
+            <a-skeleton active :loading="loading" :paragraph="{ rows: 4 }">
+              <div v-if="memoryInfo" class="memory-container">
+                <div class="mem-circle-wrapper">
+                  <a-progress
+                    type="circle"
+                    :percent="Number(((memoryInfo.used_memory / memoryInfo.total_memory) * 100).toFixed(1))"
+                    :stroke-color="{ '0%': '#4facfe', '100%': '#00f2fe' }"
+                    :stroke-width="10"
+                    :width="120"
+                  >
+                    <template #format="percent">
+                      <span class="circle-text">{{ percent }}%</span>
+                      <span class="circle-sub">使用率</span>
+                    </template>
+                  </a-progress>
+                </div>
+                
+                <div class="mem-details">
+                  <div class="mem-stat-row">
+                    <span class="mem-dot used"></span>
+                    <span class="mem-label">已用</span>
+                    <span class="mem-val">{{ formatBytes(memoryInfo.used_memory) }}</span>
+                  </div>
+                   <div class="mem-stat-row">
+                    <span class="mem-dot free"></span>
+                    <span class="mem-label">可用</span>
+                    <span class="mem-val">{{ formatBytes(memoryInfo.available_memory) }}</span>
+                  </div>
+                  <div class="mem-stat-row total">
+                    <span class="mem-label">总量</span>
+                    <span class="mem-val">{{ formatBytes(memoryInfo.total_memory) }}</span>
+                  </div>
+                </div>
+              </div>
+            </a-skeleton>
+          </a-card>
+        </div>
+      </a-col>
       <!-- 系统信息卡片 -->
       <a-col :xs="24" :lg="12">
         <div class="card-wrapper">
@@ -175,55 +251,6 @@ onUnmounted(() => {
         </div>
       </a-col>
 
-      <!-- 内存信息卡片 -->
-      <a-col :xs="24" :lg="12">
-        <div class="card-wrapper">
-          <div class="card-header mem-header">
-             <div class="icon-box">
-              <HddOutlined />
-            </div>
-            <span class="card-title">内存使用</span>
-          </div>
-          <a-card :bordered="false" class="info-card custom-card">
-            <a-skeleton active :loading="loading" :paragraph="{ rows: 4 }">
-              <div v-if="memoryInfo" class="memory-container">
-                <div class="mem-circle-wrapper">
-                  <a-progress
-                    type="circle"
-                    :percent="Number(((memoryInfo.used_memory / memoryInfo.total_memory) * 100).toFixed(1))"
-                    :stroke-color="{ '0%': '#4facfe', '100%': '#00f2fe' }"
-                    :stroke-width="10"
-                    :width="120"
-                  >
-                    <template #format="percent">
-                      <span class="circle-text">{{ percent }}%</span>
-                      <span class="circle-sub">使用率</span>
-                    </template>
-                  </a-progress>
-                </div>
-                
-                <div class="mem-details">
-                  <div class="mem-stat-row">
-                    <span class="mem-dot used"></span>
-                    <span class="mem-label">已用</span>
-                    <span class="mem-val">{{ formatBytes(memoryInfo.used_memory) }}</span>
-                  </div>
-                   <div class="mem-stat-row">
-                    <span class="mem-dot free"></span>
-                    <span class="mem-label">可用</span>
-                    <span class="mem-val">{{ formatBytes(memoryInfo.available_memory) }}</span>
-                  </div>
-                  <div class="mem-stat-row total">
-                    <span class="mem-label">总量</span>
-                    <span class="mem-val">{{ formatBytes(memoryInfo.total_memory) }}</span>
-                  </div>
-                </div>
-              </div>
-            </a-skeleton>
-          </a-card>
-        </div>
-      </a-col>
-
       <!-- 磁盘信息卡片 -->
       <a-col :xs="24" :lg="12">
         <div class="card-wrapper">
@@ -266,102 +293,13 @@ onUnmounted(() => {
           </a-card>
         </div>
       </a-col>
-
-      <!-- 网络监控卡片 -->
-      <a-col :xs="24">
-        <div class="card-wrapper">
-          <div class="card-header network-header">
-            <div class="icon-box">
-              <WifiOutlined />
-            </div>
-            <span class="card-title">网络监控</span>
-          </div>
-          <a-card :bordered="false" class="info-card custom-card">
-            <a-skeleton active :loading="loading" :paragraph="{ rows: 3 }">
-              <div class="network-container">
-                <!-- 实时速度 -->
-                <div class="network-speed-box">
-                  <div class="speed-item upload">
-                    <ArrowUpOutlined class="speed-icon" />
-                    <div class="speed-content">
-                      <span class="speed-label">上传速度</span>
-                      <span class="speed-value">{{ formatSpeed(currentNetworkSpeed.upload) }}</span>
-                    </div>
-                  </div>
-                  <div class="speed-item download">
-                    <ArrowDownOutlined class="speed-icon" />
-                    <div class="speed-content">
-                      <span class="speed-label">下载速度</span>
-                      <span class="speed-value">{{ formatSpeed(currentNetworkSpeed.download) }}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- 七日流量统计 -->
-                <div class="seven-day-traffic">
-                  <div class="traffic-header">
-                    <span class="traffic-title">流量统计</span>
-                  </div>
-
-                  <!-- 日期选择器 -->
-                  <div class="date-selector">
-                    <div
-                      v-for="dayIndex in 7"
-                      :key="dayIndex - 1"
-                      :class="['date-tab', { active: selectedDayIndex === dayIndex - 1 }]"
-                      @click="selectedDayIndex = dayIndex - 1"
-                    >
-                      {{ getDateLabel(dayIndex - 1) }}
-                    </div>
-                  </div>
-
-                  <!-- 流量数据 -->
-                  <div class="traffic-stats">
-                    <div class="traffic-stat-item">
-                      <span class="traffic-label">
-                        <ArrowUpOutlined /> 上传
-                      </span>
-                      <span class="traffic-value upload-color">{{ formatBytes(currentDayTraffic.upload) }}</span>
-                    </div>
-                    <div class="traffic-stat-item">
-                      <span class="traffic-label">
-                        <ArrowDownOutlined /> 下载
-                      </span>
-                      <span class="traffic-value download-color">{{ formatBytes(currentDayTraffic.download) }}</span>
-                    </div>
-                    <div class="traffic-stat-item">
-                      <span class="traffic-label">总计</span>
-                      <span class="traffic-value">{{ formatBytes(currentDayTraffic.upload + currentDayTraffic.download) }}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- 网络接口列表 -->
-                <div v-if="networkInfo.length > 0" class="network-interfaces">
-                  <div
-                    v-for="(iface, index) in networkInfo.slice(0, 3)"
-                    :key="index"
-                    class="interface-item"
-                  >
-                    <span class="interface-name">{{ iface.interface_name }}</span>
-                    <div class="interface-stats">
-                      <span class="stat-text">↓ {{ formatBytes(iface.received_bytes) }}</span>
-                      <span class="stat-text">↑ {{ formatBytes(iface.transmitted_bytes) }}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </a-skeleton>
-          </a-card>
-        </div>
-      </a-col>
     </a-row>
   </div>
 </template>
 
 <style scoped>
 .system-view {
-  padding-bottom: 20px;
+
 }
 
 .card-wrapper {
@@ -370,14 +308,16 @@ onUnmounted(() => {
   flex-direction: column;
   border-radius: 16px;
   background: #fff;
-  box-shadow: var(--box-shadow);
+  box-shadow: var(--box-shadow-card);
   overflow: hidden;
-  transition: transform 0.3s ease;
+  transition: all 0.3s ease;
+  border: 1px solid var(--border-color);
 }
 
 .card-wrapper:hover {
-  transform: translateY(-4px);
+  transform: translateY(-2px);
   box-shadow: var(--box-shadow-hover);
+  border-color: rgba(59, 130, 246, 0.3);
 }
 
 .card-header {
@@ -385,29 +325,30 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 12px;
-  background: #f8fafc;
-  border-bottom: 1px solid rgba(0,0,0,0.03);
+  background: #fff;
+  border-bottom: 1px solid var(--border-color);
 }
 
-.system-header .icon-box { color: #4facfe; background: rgba(79, 172, 254, 0.1); }
-.cpu-header .icon-box { color: #43e97b; background: rgba(67, 233, 123, 0.1); }
-.mem-header .icon-box { color: #fa709a; background: rgba(250, 112, 154, 0.1); }
-.disk-header-bg .icon-box { color: #a18cd1; background: rgba(161, 140, 209, 0.1); }
+.system-header .icon-box { color: #3b82f6; background: rgba(59, 130, 246, 0.1); }
+.cpu-header .icon-box { color: #10b981; background: rgba(16, 185, 129, 0.1); }
+.mem-header .icon-box { color: #f43f5e; background: rgba(244, 63, 94, 0.1); }
+.disk-header-bg .icon-box { color: #8b5cf6; background: rgba(139, 92, 246, 0.1); }
 
 .icon-box {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
+  font-size: 20px;
 }
 
 .card-title {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--text-primary);
+  letter-spacing: 0.3px;
 }
 
 .custom-card {
@@ -417,21 +358,21 @@ onUnmounted(() => {
 }
 
 :deep(.ant-card-body) {
-  padding: 20px !important;
+  padding: 24px !important;
 }
 
 /* System Info Detail List */
 .detail-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 
 .detail-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding-bottom: 8px;
+  padding-bottom: 10px;
   border-bottom: 1px dashed rgba(0,0,0,0.05);
 }
 
@@ -497,14 +438,22 @@ onUnmounted(() => {
 }
 
 .stat-box {
-  background: #f8fafc;
-  padding: 12px;
+  background: var(--surface-hover);
+  padding: 16px;
   border-radius: 12px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   text-align: center;
+  border: 1px solid transparent;
+  transition: all 0.2s;
+}
+
+.stat-box:hover {
+  background: #fff;
+  border-color: var(--primary-color);
+  box-shadow: var(--box-shadow-sm);
 }
 
 .stat-label {
@@ -605,20 +554,21 @@ onUnmounted(() => {
 
 .disk-item {
   display: flex;
-  gap: 12px;
+  gap: 16px;
   align-items: flex-start;
+  padding: 8px 0;
 }
 
 .disk-icon {
-  width: 36px;
-  height: 36px;
-  background: #f8fafc;
-  border-radius: 8px;
+  width: 40px;
+  height: 40px;
+  background: var(--surface-hover);
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #a18cd1;
-  font-size: 18px;
+  color: #8b5cf6;
+  font-size: 20px;
   flex-shrink: 0;
 }
 
@@ -662,34 +612,37 @@ onUnmounted(() => {
 
 /* Network Monitor */
 .network-header .icon-box {
-  color: #38bdf8;
-  background: rgba(56, 189, 248, 0.1);
+  color: #06b6d4;
+  background: rgba(6, 182, 212, 0.1);
 }
 
 .network-container {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 24px;
 }
 
 .network-speed-box {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 16px;
+  gap: 24px;
 }
 
 .speed-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 16px;
-  background: #f8fafc;
-  border-radius: 12px;
+  gap: 16px;
+  padding: 20px;
+  background: var(--surface-hover);
+  border-radius: 16px;
   transition: all 0.3s ease;
+  border: 1px solid transparent;
 }
 
 .speed-item:hover {
-  background: #f1f5f9;
+  background: #fff;
+  border-color: var(--border-color);
+  box-shadow: var(--box-shadow-sm);
   transform: translateY(-2px);
 }
 
@@ -718,139 +671,5 @@ onUnmounted(() => {
   font-size: 18px;
   font-weight: 700;
   color: var(--text-primary);
-}
-
-.network-interfaces {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.interface-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 12px;
-  background: #f8fafc;
-  border-radius: 8px;
-  font-size: 13px;
-}
-
-.interface-name {
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.interface-stats {
-  display: flex;
-  gap: 12px;
-}
-
-.stat-text {
-  color: var(--text-secondary);
-  font-size: 12px;
-}
-
-/* Seven Day Traffic */
-.seven-day-traffic {
-  padding: 16px;
-  background: #f8fafc;
-  border-radius: 12px;
-  border: 1px solid rgba(0, 0, 0, 0.05);
-}
-
-.traffic-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.traffic-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-/* Date Selector */
-.date-selector {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 16px;
-  overflow-x: auto;
-  padding: 2px;
-}
-
-.date-tab {
-  flex-shrink: 0;
-  padding: 6px 12px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  background: white;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  user-select: none;
-}
-
-.date-tab:hover {
-  background: #f1f5f9;
-  border-color: rgba(79, 172, 254, 0.3);
-  color: var(--primary-color);
-}
-
-.date-tab.active {
-  background: var(--primary-gradient);
-  color: white;
-  border-color: transparent;
-  box-shadow: 0 4px 12px rgba(79, 172, 254, 0.3);
-}
-
-.traffic-stats {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-}
-
-.traffic-stat-item {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 12px;
-  background: white;
-  border: 1px solid rgba(0, 0, 0, 0.05);
-  border-radius: 8px;
-  transition: all 0.3s ease;
-}
-
-.traffic-stat-item:hover {
-  background: #fafbfc;
-  border-color: rgba(79, 172, 254, 0.2);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-}
-
-.traffic-label {
-  font-size: 12px;
-  color: var(--text-secondary);
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.traffic-value {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.upload-color {
-  color: #f59e0b;
-}
-
-.download-color {
-  color: #10b981;
 }
 </style>

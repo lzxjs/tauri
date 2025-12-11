@@ -15,7 +15,8 @@
       "Bash(cargo build:*)",
       "Bash(npm run tauri:*)",
       "Bash(cmd /c taskkill /F /PID 28172)",
-      "Bash(npm run tauri:build)"
+      "Bash(npm run tauri:build)",
+      "Bash(rm \"d:\\code\\tauri\\src\\services\\networkTrafficService.js\")"
     ]
   }
 }

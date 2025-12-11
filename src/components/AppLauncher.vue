@@ -853,18 +853,19 @@ onUnmounted(() => {
 
 <style scoped>
 .app-launcher {
-  padding-bottom: 20px;
+  padding-bottom: 24px;
 }
 
 .card-wrapper {
   background: #fff;
   border-radius: 16px;
-  box-shadow: var(--box-shadow);
+  box-shadow: var(--box-shadow-card);
   overflow: hidden;
-  transition: transform 0.3s ease;
-  min-height: 80vh;
+  transition: all 0.3s ease;
+  min-height: 85vh;
   display: flex;
   flex-direction: column;
+  border: 1px solid var(--border-color);
 }
 
 /* Header Styles */
@@ -873,45 +874,56 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: #f8fafc;
-  border-bottom: 1px solid rgba(0,0,0,0.03);
+  background: #fff;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .header-left {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
 }
 
 .launcher-header .icon-box {
-  color: #4facfe;
-  background: rgba(79, 172, 254, 0.1);
+  color: #3b82f6;
+  background: rgba(59, 130, 246, 0.1);
 }
 
 .icon-box {
-  width: 32px;
-  height: 32px;
+  width: 40px;
+  height: 40px;
   border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
+  font-size: 20px;
 }
 
 .card-title {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 600;
   color: var(--text-primary);
+  letter-spacing: -0.5px;
 }
 
 .scene-selector-group {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
+  background: var(--surface-hover);
+  padding: 4px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
 }
 
 .scene-select {
-  width: 180px;
+  width: 200px;
+}
+
+:deep(.ant-select-selector) {
+  background-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
 }
 
 .icon-btn {
@@ -922,10 +934,14 @@ onUnmounted(() => {
   background: transparent;
   box-shadow: none;
   color: var(--text-secondary);
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
 }
 
 .icon-btn:hover {
-  background: rgba(0,0,0,0.03);
+  background: rgba(0,0,0,0.05);
   color: var(--primary-color);
 }
 
@@ -961,11 +977,11 @@ onUnmounted(() => {
 
 /* Drop Zone */
 .drop-zone {
-  border: 2px dashed rgba(79, 172, 254, 0.3);
-  border-radius: 12px;
-  padding: 32px;
+  border: 2px dashed var(--border-color);
+  border-radius: 16px;
+  padding: 40px;
   text-align: center;
-  background: rgba(248, 250, 252, 0.6);
+  background: var(--surface-hover);
   transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
   cursor: pointer;
   margin-bottom: 24px;
@@ -975,38 +991,44 @@ onUnmounted(() => {
 
 .drop-zone:hover {
   border-color: var(--primary-color);
-  background: rgba(79, 172, 254, 0.05);
+  background: rgba(59, 130, 246, 0.02);
   transform: translateY(-2px);
+  box-shadow: var(--box-shadow-sm);
 }
 
 .drop-zone-active {
   border-color: var(--primary-color);
-  background: rgba(79, 172, 254, 0.1);
+  background: rgba(59, 130, 246, 0.05);
   transform: scale(1.01);
-  box-shadow: 0 10px 30px rgba(79, 172, 254, 0.15);
+  box-shadow: 0 10px 30px rgba(59, 130, 246, 0.15);
 }
 
 .drop-content {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 20px;
+  gap: 24px;
 }
 
 .drop-icon-wrapper {
-  width: 64px;
-  height: 64px;
-  border-radius: 20px;
+  width: 72px;
+  height: 72px;
+  border-radius: 24px;
   background: white;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.06);
+  transition: transform 0.3s ease;
+}
+
+.drop-zone:hover .drop-icon-wrapper {
+  transform: scale(1.05) rotate(5deg);
 }
 
 .drop-icon {
-  font-size: 32px;
-  color: #4facfe;
+  font-size: 36px;
+  color: var(--primary-color);
 }
 
 .drop-text-group {
@@ -1030,15 +1052,33 @@ onUnmounted(() => {
 .app-table-wrapper {
   background: white;
   border-radius: 12px;
-  border: 1px solid rgba(0,0,0,0.03);
+  border: 1px solid var(--border-color);
   overflow: hidden;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 让表格内容区域自适应高度 */
+:deep(.ant-table-wrapper),
+:deep(.ant-spin-nested-loading),
+:deep(.ant-spin-container),
+:deep(.ant-table),
+:deep(.ant-table-container),
+:deep(.ant-table-body) {
+  height: 100%;
+}
+
+:deep(.ant-table-body) {
+  overflow-y: auto !important;
 }
 
 :deep(.ant-table-thead > tr > th) {
-  background: #f8fafc;
+  background: var(--surface-hover);
   font-weight: 600;
   color: var(--text-secondary);
   font-size: 13px;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .name-cell {

@@ -5,7 +5,6 @@ import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { message } from "ant-design-vue";
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { startNetworkTrafficService, stopNetworkTrafficService } from "./services/networkTrafficService";
 import { loadClipboardItems, addClipboardItem } from './composables/useClipboardStore';
 
 const route = useRoute();
@@ -136,16 +135,12 @@ onMounted(() => {
     collapsed.value = savedCollapsed === 'true';
   }
 
-  // 启动全局网络流量统计服务
-  startNetworkTrafficService();
-
   // 启动全局剪贴板监听服务
   startClipboardMonitoring();
 });
 
 // 组件卸载时停止服务
 onUnmounted(() => {
-  stopNetworkTrafficService();
   stopClipboardMonitoring();
 });
 </script>
@@ -192,11 +187,11 @@ onUnmounted(() => {
             </a-menu-item>
            <a-menu-item key="recorder">
               <span class="menu-icon-wrapper">⏺️</span>
-              <span class="menu-text">动作录制</span>
+              <span class="menu-text">动作回放</span>
             </a-menu-item>
             <a-menu-item key="iframe">
               <span class="menu-icon-wrapper">🌐</span>
-              <span class="menu-text">网页浏览</span>
+              <span class="menu-text">更多工具</span>
             </a-menu-item>
             <!-- <a-menu-item key="scraper">
               <span class="menu-icon-wrapper">🕷️</span>
@@ -250,10 +245,10 @@ onUnmounted(() => {
 
 .sider {
   z-index: 20;
-  background: rgba(255, 255, 255, 0.8) !important;
-  backdrop-filter: blur(20px);
-  border-right: 1px solid rgba(255, 255, 255, 0.3);
-  box-shadow: 20px 0 40px rgba(0, 0, 0, 0.02);
+  background: rgba(255, 255, 255, 0.85) !important;
+  backdrop-filter: blur(12px);
+  border-right: 1px solid var(--border-color);
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.02);
   display: flex;
   flex-direction: column;
 }
@@ -264,64 +259,63 @@ onUnmounted(() => {
 }
 
 .brand {
-  height: 100px;
+  height: 88px;
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  padding: 0 28px;
-  gap: 16px;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  padding: 0 24px;
+  gap: 12px;
+  transition: all 0.3s ease;
+  margin-bottom: 8px;
 }
 
 .logo-box {
-  width: 42px;
-  height: 42px;
+  width: 40px;
+  height: 40px;
   background: linear-gradient(135deg, #FF9A9E 0%, #FECFEF 100%);
-  border-radius: 14px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 8px 16px rgba(255, 154, 158, 0.25);
+  box-shadow: 0 4px 12px rgba(255, 154, 158, 0.3);
   transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .brand:hover .logo-box {
-  transform: scale(1.05) rotate(5deg);
+  transform: rotate(10deg);
 }
 
 .logo-icon {
-  font-size: 22px;
-  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+  font-size: 20px;
 }
 
 .brand-text {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 0;
 }
 
 .brand h1 {
   margin: 0;
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--text-primary);
-  letter-spacing: -0.5px;
-  line-height: 1.2;
+  line-height: 1.4;
 }
 
 .version {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--text-tertiary);
   font-weight: 500;
-  background: rgba(0,0,0,0.03);
-  padding: 2px 6px;
-  border-radius: 6px;
+  background: rgba(0,0,0,0.04);
+  padding: 1px 5px;
+  border-radius: 4px;
   align-self: flex-start;
 }
 
 .menu-container {
   flex: 1;
-  padding: 10px 16px;
+  padding: 0 12px;
   overflow-y: auto;
 }
 
@@ -332,52 +326,53 @@ onUnmounted(() => {
 
 /* 覆盖 Ant Design Menu 样式 */
 :deep(.ant-menu-item) {
-  border-radius: 12px;
-  margin-bottom: 8px !important;
+  border-radius: 8px;
+  margin-bottom: 4px !important;
   color: var(--text-secondary);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  height: 52px !important;
-  line-height: 52px !important;
-  padding-left: 16px !important;
+  transition: all 0.2s ease;
+  height: 44px !important;
+  line-height: 44px !important;
+  padding-left: 12px !important;
   position: relative;
   overflow: hidden;
 }
 
 :deep(.ant-menu-item:hover) {
   color: var(--primary-color) !important;
-  background: var(--surface-hover) !important;
+  background: rgba(59, 130, 246, 0.08) !important;
 }
 
 :deep(.ant-menu-item-selected) {
-  background: var(--primary-gradient) !important;
+  background: var(--primary-color) !important;
   color: #fff !important;
-  box-shadow: 0 8px 20px rgba(79, 172, 254, 0.3);
-  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+  font-weight: 500;
 }
 
 .menu-icon-wrapper {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  margin-right: 12px;
-  font-size: 18px;
+  width: 20px;
+  margin-right: 10px;
+  font-size: 16px;
   transition: transform 0.3s ease;
 }
 
 :deep(.ant-menu-item-selected) .menu-icon-wrapper {
-  transform: scale(1.1);
+  transform: scale(1.05);
 }
 
 .menu-text {
-  font-size: 14px;
+  font-size: 13.5px;
 }
 
 .sider-footer {
-  padding: 24px;
+  padding: 20px;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  border-top: 1px solid rgba(0,0,0,0.03);
 }
 
 .collapse-trigger {
@@ -385,52 +380,47 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 12px;
-  background: rgba(79, 172, 254, 0.1);
-  border-radius: 12px;
+  padding: 10px;
+  background: transparent;
+  border-radius: 8px;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all 0.2s ease;
   user-select: none;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
 }
 
 .collapse-trigger:hover {
-  background: rgba(79, 172, 254, 0.2);
-  transform: translateX(-2px);
+  background: var(--surface-hover);
+  border-color: var(--primary-color);
+  color: var(--primary-color);
 }
 
 .collapse-icon {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: bold;
-  color: var(--primary-color);
-  transition: transform 0.3s ease;
-}
-
-.collapse-trigger:hover .collapse-icon {
-  transform: scale(1.2);
 }
 
 .collapse-text {
-  font-size: 13px;
-  color: var(--primary-color);
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .autostart-card {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px;
-  background: rgba(255, 255, 255, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.6);
-  border-radius: 16px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
+  padding: 12px 14px;
+  background: #fff;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
   transition: all 0.3s ease;
 }
 
 .autostart-card:hover {
-  background: #fff;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
-  transform: translateY(-2px);
+  border-color: var(--primary-color);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.1);
 }
 
 .autostart-info {
@@ -473,7 +463,7 @@ onUnmounted(() => {
   overflow-y: auto;
   overflow-x: hidden;
   padding-right: 8px;
-  padding-bottom: 24px;
+  /* padding-bottom: 24px; */
 }
 
 /* 路由切换动画 - 滑动渐变 */
@@ -532,10 +522,11 @@ onUnmounted(() => {
 
 /* 侧边栏收起状态样式 */
 .sider.ant-layout-sider-collapsed .brand {
-  padding: 20px 0 !important;
+  padding: 16px 0 !important;
   height: auto;
   justify-content: center !important;
   width: 100%;
+  margin-bottom: 8px;
 }
 
 .sider.ant-layout-sider-collapsed .brand-text {
@@ -544,27 +535,27 @@ onUnmounted(() => {
 
 .sider.ant-layout-sider-collapsed .logo-box {
   margin: 0 !important;
-  width: 36px !important;
-  height: 36px !important;
-  border-radius: 10px;
+  width: 40px !important;
+  height: 40px !important;
+  border-radius: 12px;
 }
 
 .sider.ant-layout-sider-collapsed .menu-container {
-  padding: 10px 12px;
+  padding: 0 8px;
 }
 
 .sider.ant-layout-sider-collapsed .ant-menu-item {
   padding-left: 0 !important;
   justify-content: center;
-  height: 48px !important;
-  line-height: 48px !important;
-  margin-bottom: 6px !important;
+  height: 44px !important;
+  line-height: 44px !important;
+  margin-bottom: 4px !important;
 }
 
 .sider.ant-layout-sider-collapsed .menu-icon-wrapper {
   margin-right: 0;
-  font-size: 22px;
-  width: 17px;
+  font-size: 18px;
+  width: auto;
 }
 
 .sider.ant-layout-sider-collapsed .menu-text {
@@ -572,11 +563,11 @@ onUnmounted(() => {
 }
 
 .sider.ant-layout-sider-collapsed .sider-footer {
-  padding: 16px 12px;
+  padding: 16px 8px;
 }
 
 .sider.ant-layout-sider-collapsed .collapse-trigger {
-  padding: 10px;
+  padding: 8px;
 }
 
 .sider.ant-layout-sider-collapsed .collapse-text {
@@ -585,13 +576,20 @@ onUnmounted(() => {
 
 .sider.ant-layout-sider-collapsed .autostart-card {
   flex-direction: column;
-  padding: 10px;
-  gap: 0;
+  padding: 8px;
+  gap: 4px;
   justify-content: center;
+  align-items: center;
 }
 
 .sider.ant-layout-sider-collapsed .autostart-info {
   display: none;
+}
+
+/* 隐藏收起状态下的 switch 旁边的空隙 */
+.sider.ant-layout-sider-collapsed :deep(.ant-switch) {
+  margin: 0;
+  transform: scale(0.8);
 }
 
 /* 侧边栏过渡动画 */

@@ -75,18 +75,34 @@ pub fn get_clipboard_content() -> Result<ClipboardContent, String> {
 /// 设置剪贴板文本内容
 #[tauri::command]
 pub fn set_clipboard_text(text: String) -> Result<(), String> {
-    let mut clipboard = Clipboard::new().map_err(|e| format!("无法访问剪贴板: {}", e))?;
+    let mut last_error = String::new();
 
-    clipboard
-        .set_text(text)
-        .map_err(|e| format!("设置剪贴板失败: {}", e))
+    // 重试机制 (解决 os error 1418)
+    for _ in 0..5 {
+        let mut clipboard = match Clipboard::new() {
+            Ok(c) => c,
+            Err(e) => {
+                last_error = format!("无法访问剪贴板: {}", e);
+                thread::sleep(Duration::from_millis(100));
+                continue;
+            }
+        };
+
+        match clipboard.set_text(text.clone()) {
+            Ok(_) => return Ok(()),
+            Err(e) => {
+                last_error = format!("设置剪贴板失败: {}", e);
+                thread::sleep(Duration::from_millis(100));
+            }
+        }
+    }
+
+    Err(last_error)
 }
 
 /// 设置剪贴板图片内容（从Base64）
 #[tauri::command]
 pub fn set_clipboard_image(image_data: String) -> Result<(), String> {
-    let mut clipboard = Clipboard::new().map_err(|e| format!("无法访问剪贴板: {}", e))?;
-
     // 解析格式：width,height,base64data
     let parts: Vec<&str> = image_data.splitn(3, ',').collect();
     if parts.len() != 3 {
@@ -99,15 +115,40 @@ pub fn set_clipboard_image(image_data: String) -> Result<(), String> {
         .decode(parts[2])
         .map_err(|e| format!("Base64解码失败: {}", e))?;
 
-    let image = ImageData {
-        width,
-        height,
-        bytes: bytes.into(),
-    };
+    // ImageData 中的 bytes 是 Cow<'a, [u8]>，我们需要在这里拥有它以便重试时克隆
+    // 但 ImageData 自身不容易深拷贝（arboard::ImageData 字段是 pub 的但 bytes 是 Cow）
+    // 所以我们每次重试都构建一个新的 ImageData
+    let bytes_vec = bytes;
 
-    clipboard
-        .set_image(image)
-        .map_err(|e| format!("设置剪贴板图片失败: {}", e))
+    let mut last_error = String::new();
+
+    // 重试机制
+    for _ in 0..5 {
+        let mut clipboard = match Clipboard::new() {
+            Ok(c) => c,
+            Err(e) => {
+                last_error = format!("无法访问剪贴板: {}", e);
+                thread::sleep(Duration::from_millis(100));
+                continue;
+            }
+        };
+
+        let image = ImageData {
+            width,
+            height,
+            bytes: std::borrow::Cow::Borrowed(&bytes_vec),
+        };
+
+        match clipboard.set_image(image) {
+            Ok(_) => return Ok(()),
+            Err(e) => {
+                last_error = format!("设置剪贴板图片失败: {}", e);
+                thread::sleep(Duration::from_millis(100));
+            }
+        }
+    }
+
+    Err(last_error)
 }
 
 /// 启动剪贴板监听服务

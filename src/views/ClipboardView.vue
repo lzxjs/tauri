@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { open } from '@tauri-apps/plugin-shell';
 import { message } from 'ant-design-vue';
 import {
   SearchOutlined,
@@ -13,7 +14,12 @@ import {
   MailOutlined,
   FileTextOutlined,
   ClearOutlined,
-  PictureOutlined
+  PictureOutlined,
+  EditOutlined,
+  GlobalOutlined,
+  FilterOutlined,
+  AppstoreOutlined,
+  BarsOutlined
 } from '@ant-design/icons-vue';
 import {
   clipboardItems,
@@ -25,7 +31,6 @@ import {
   clearAll,
   toggleFavorite,
   updateNote,
-  searchItems,
   getFavorites,
   getNonFavorites,
   imageDataToDataUrl
@@ -34,9 +39,16 @@ import {
 const loading = ref(true);
 const searchKeyword = ref('');
 const activeTab = ref('all'); // 'all' | 'favorites'
+const filterType = ref('all'); // 'all' | 'text' | 'image' | 'url' | 'email'
 const selectedItems = ref([]);
 const previewImage = ref(null); // 图片预览
 const previewVisible = ref(false); // 预览对话框显示状态
+
+// 备注编辑相关
+const noteModalVisible = ref(false);
+const editingItem = ref(null);
+const editingNote = ref('');
+
 let unlistenClipboard = null;
 
 // 过滤后的列表
@@ -45,6 +57,12 @@ const filteredItems = computed(() => {
     ? getFavorites()
     : clipboardItems.value;
 
+  // 类型过滤
+  if (filterType.value !== 'all') {
+    items = items.filter(item => item.type === filterType.value);
+  }
+
+  // 关键词搜索
   if (searchKeyword.value.trim()) {
     const keyword = searchKeyword.value.toLowerCase();
     items = items.filter(item =>
@@ -91,13 +109,27 @@ const getTypeColor = (type) => {
   }
 };
 
+// 获取类型背景色（浅色）
+const getTypeBgColor = (type) => {
+  switch (type) {
+    case 'url':
+      return '#eff6ff'; // blue-50
+    case 'email':
+      return '#f5f3ff'; // violet-50
+    case 'image':
+      return '#ecfdf5'; // emerald-50
+    default:
+      return '#f1f5f9'; // slate-100
+  }
+};
+
 // 获取类型标签文本
 const getTypeLabel = (type) => {
   switch (type) {
     case 'url':
-      return 'URL';
+      return '链接';
     case 'email':
-      return 'Email';
+      return '邮件';
     case 'image':
       return '图片';
     default:
@@ -130,29 +162,12 @@ const formatTime = (timestamp) => {
   const now = new Date();
   const diff = now - date;
 
-  // 小于1分钟
-  if (diff < 60000) {
-    return '刚刚';
-  }
+  if (diff < 60000) return '刚刚';
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}分钟前`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}小时前`;
+  if (diff < 604800000) return `${Math.floor(diff / 86400000)}天前`;
 
-  // 小于1小时
-  if (diff < 3600000) {
-    return `${Math.floor(diff / 60000)}分钟前`;
-  }
-
-  // 小于24小时
-  if (diff < 86400000) {
-    return `${Math.floor(diff / 3600000)}小时前`;
-  }
-
-  // 小于7天
-  if (diff < 604800000) {
-    return `${Math.floor(diff / 86400000)}天前`;
-  }
-
-  // 显示具体日期
   return date.toLocaleDateString('zh-CN', {
-    year: 'numeric',
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
@@ -160,7 +175,7 @@ const formatTime = (timestamp) => {
   });
 };
 
-// 复制到剪贴板（支持文本和图片）
+// 复制到剪贴板
 const copyToClipboard = async (item) => {
   try {
     if (item.type === 'image' && item.imageData) {
@@ -168,17 +183,56 @@ const copyToClipboard = async (item) => {
       message.success('已复制图片到剪贴板');
     } else {
       await invoke('set_clipboard_text', { text: item.content });
-      message.success('已复制到剪贴板');
+      message.success('已复制文本到剪贴板');
     }
   } catch (error) {
     message.error('复制失败: ' + error);
   }
 };
 
-// 双击复制或预览
+// 打开链接
+const openUrl = async (url) => {
+  try {
+    // 确保有协议头
+    let targetUrl = url;
+    if (!/^https?:\/\//i.test(url)) {
+      targetUrl = 'https://' + url;
+    }
+    await open(targetUrl);
+    message.success('正在打开浏览器...');
+  } catch (error) {
+    message.error('无法打开链接: ' + error);
+  }
+};
+
+// 打开备注编辑
+const openNoteModal = (item) => {
+  editingItem.value = item;
+  editingNote.value = item.note || '';
+  noteModalVisible.value = true;
+};
+
+// 保存备注
+const saveNote = async () => {
+  if (editingItem.value) {
+    try {
+      await updateNote(editingItem.value.id, editingNote.value);
+      message.success('备注已更新');
+      noteModalVisible.value = false;
+      editingItem.value = null;
+      editingNote.value = '';
+    } catch (error) {
+      message.error('保存失败: ' + error);
+    }
+  }
+};
+
+// 双击处理
 const handleDoubleClick = (item) => {
   if (item.type === 'image') {
     showImagePreview(item);
+  } else if (item.type === 'url') {
+    openUrl(item.content);
   } else {
     copyToClipboard(item);
   }
@@ -203,29 +257,12 @@ const handleDelete = async (itemId) => {
   }
 };
 
-// 批量删除
-const handleBatchDelete = async () => {
-  if (selectedItems.value.length === 0) {
-    message.warning('请先选择要删除的项目');
-    return;
-  }
-
-  try {
-    await removeClipboardItems(selectedItems.value);
-    selectedItems.value = [];
-    message.success(`已删除 ${selectedItems.value.length} 项`);
-  } catch (error) {
-    message.error('删除失败: ' + error);
-  }
-};
-
 // 清空历史
 const handleClearHistory = () => {
   if (clipboardItems.value.length === 0) {
     message.info('历史记录已为空');
     return;
   }
-
   clearHistory();
   message.success('已清空历史记录（保留收藏）');
 };
@@ -236,7 +273,6 @@ const handleClearAll = () => {
     message.info('列表已为空');
     return;
   }
-
   clearAll();
   message.success('已清空所有记录');
 };
@@ -244,15 +280,11 @@ const handleClearAll = () => {
 // 启动剪贴板监听
 const startMonitoring = async () => {
   try {
-    // 启动后端监听服务
     await invoke('start_clipboard_monitor');
-
-    // 监听剪贴板变化事件
     unlistenClipboard = await listen('clipboard-changed', async (event) => {
       const content = event.payload;
       await addClipboardItem(content);
     });
-
     console.log('剪贴板监听已启动');
   } catch (error) {
     console.error('启动剪贴板监听失败:', error);
@@ -274,7 +306,6 @@ const stopMonitoring = async () => {
   }
 };
 
-// 组件挂载
 onMounted(async () => {
   loading.value = true;
   try {
@@ -287,7 +318,6 @@ onMounted(async () => {
   }
 });
 
-// 组件卸载
 onUnmounted(() => {
   stopMonitoring();
 });
@@ -295,473 +325,527 @@ onUnmounted(() => {
 
 <template>
   <div class="clipboard-view">
-    <!-- 顶部工具栏 -->
-    <div class="toolbar">
-      <div class="toolbar-left">
+    <!-- 顶部控制区 -->
+    <div class="control-panel glass-effect">
+      <div class="search-bar">
         <a-input
           v-model:value="searchKeyword"
-          placeholder="搜索剪贴板内容..."
-          class="search-input"
+          placeholder="搜索剪贴板内容、备注..."
+          class="custom-search"
           allow-clear
         >
           <template #prefix>
-            <SearchOutlined />
+            <SearchOutlined style="color: var(--text-tertiary)" />
           </template>
         </a-input>
       </div>
+      
+      <div class="filter-bar">
+        <a-radio-group v-model:value="filterType" button-style="solid" size="small">
+          <a-radio-button value="all">全部</a-radio-button>
+          <a-radio-button value="text">文本</a-radio-button>
+          <a-radio-button value="image">图片</a-radio-button>
+          <a-radio-button value="url">链接</a-radio-button>
+          <a-radio-button value="email">邮件</a-radio-button>
+        </a-radio-group>
 
-      <div class="toolbar-right">
-        <a-button @click="handleClearHistory" class="action-btn">
-          <template #icon><ClearOutlined /></template>
-          清空历史
-        </a-button>
-        <a-button danger @click="handleClearAll" class="action-btn">
-          <template #icon><DeleteOutlined /></template>
-          清空所有
-        </a-button>
-      </div>
-    </div>
-
-    <!-- 统计信息 -->
-    <div class="stats-bar">
-      <div class="stat-item">
-        <span class="stat-label">总计</span>
-        <span class="stat-value">{{ stats.total }}</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-label">收藏</span>
-        <span class="stat-value favorite-color">{{ stats.favorites }}</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-label">普通</span>
-        <span class="stat-value">{{ stats.nonFavorites }}</span>
-      </div>
-    </div>
-
-    <!-- 标签页切换 -->
-    <a-tabs v-model:activeKey="activeTab" class="custom-tabs">
-      <a-tab-pane key="all" tab="全部记录">
-        <div class="items-container">
-          <a-spin :spinning="loading">
-            <div v-if="filteredItems.length === 0" class="empty-state">
-              <a-empty description="暂无剪贴板记录">
-                <template #image>
-                  <div class="empty-icon">📋</div>
-                </template>
-              </a-empty>
-            </div>
-
-            <div v-else class="items-list">
-              <div
-                v-for="item in filteredItems"
-                :key="item.id"
-                class="clipboard-item"
-                @dblclick="handleDoubleClick(item)"
-              >
-                <div class="item-header">
-                  <div class="item-type">
-                    <component :is="getTypeIcon(item.type)" :style="{ color: getTypeColor(item.type) }" />
-                    <span class="type-label" :style="{ color: getTypeColor(item.type) }">
-                      {{ getTypeLabel(item.type) }}
-                    </span>
-                  </div>
-
-                  <div class="item-actions">
-                    <a-button
-                      type="text"
-                      size="small"
-                      @click="handleToggleFavorite(item.id)"
-                      class="action-icon"
-                    >
-                      <component :is="item.isFavorite ? StarFilled : StarOutlined"
-                        :style="{ color: item.isFavorite ? '#fbbf24' : '#94a3b8' }"
-                      />
-                    </a-button>
-                    <a-button
-                      type="text"
-                      size="small"
-                      @click="copyToClipboard(item)"
-                      class="action-icon"
-                    >
-                      <CopyOutlined />
-                    </a-button>
-                    <a-button
-                      type="text"
-                      size="small"
-                      danger
-                      @click="handleDelete(item.id)"
-                      class="action-icon"
-                    >
-                      <DeleteOutlined />
-                    </a-button>
-                  </div>
-                </div>
-
-                <!-- 图片预览 -->
-                <div v-if="item.type === 'image'" class="item-image" @click="showImagePreview(item)">
-                  <img :src="getImageDataUrl(item)" :alt="item.content" />
-                </div>
-
-                <!-- 文本内容 -->
-                <div v-else class="item-content">
-                  {{ item.content }}
-                </div>
-
-                <div class="item-footer">
-                  <span class="item-time">{{ formatTime(item.createdAt) }}</span>
-                  <span v-if="item.note" class="item-note">{{ item.note }}</span>
-                </div>
-              </div>
-            </div>
-          </a-spin>
+        <div class="actions-right">
+          <a-tooltip title="清空非收藏历史">
+            <a-button type="text" @click="handleClearHistory" class="icon-btn">
+              <ClearOutlined />
+            </a-button>
+          </a-tooltip>
+          <a-popconfirm
+            title="确定要清空所有记录吗？包括收藏项！"
+            ok-text="确定"
+            cancel-text="取消"
+            @confirm="handleClearAll"
+          >
+            <a-tooltip title="清空所有">
+              <a-button type="text" danger class="icon-btn">
+                <DeleteOutlined />
+              </a-button>
+            </a-tooltip>
+          </a-popconfirm>
         </div>
-      </a-tab-pane>
+      </div>
+    </div>
 
-      <a-tab-pane key="favorites" tab="收藏夹">
-        <div class="items-container">
+    <!-- 主要内容区 -->
+    <div class="main-content">
+      <a-tabs v-model:activeKey="activeTab" class="custom-tabs" :animated="true">
+        <a-tab-pane key="all" tab="最近记录">
+          <template #tab>
+            <span><BarsOutlined /> 最近记录</span>
+          </template>
+        </a-tab-pane>
+        <a-tab-pane key="favorites" tab="我的收藏">
+          <template #tab>
+             <span><StarFilled /> 我的收藏</span>
+          </template>
+        </a-tab-pane>
+      </a-tabs>
+
+      <div class="list-container">
+        <a-spin :spinning="loading">
           <div v-if="filteredItems.length === 0" class="empty-state">
-            <a-empty description="暂无收藏">
+            <a-empty :description="searchKeyword ? '未找到相关记录' : '暂无剪贴板记录'">
               <template #image>
-                <div class="empty-icon">⭐</div>
+                <div class="empty-icon-wrapper">
+                  <component :is="activeTab === 'favorites' ? StarOutlined : FileTextOutlined" />
+                </div>
               </template>
             </a-empty>
           </div>
 
-          <div v-else class="items-list">
+          <transition-group name="list" tag="div" class="items-grid" v-else>
             <div
               v-for="item in filteredItems"
               :key="item.id"
-              class="clipboard-item"
+              class="clipboard-card glass-effect"
+              :class="{ 'is-favorite': item.isFavorite }"
               @dblclick="handleDoubleClick(item)"
             >
-              <div class="item-header">
-                <div class="item-type">
-                  <component :is="getTypeIcon(item.type)" :style="{ color: getTypeColor(item.type) }" />
-                  <span class="type-label" :style="{ color: getTypeColor(item.type) }">
-                    {{ getTypeLabel(item.type) }}
-                  </span>
+              <!-- 卡片头部 -->
+              <div class="card-header">
+                <div class="type-tag" :style="{ color: getTypeColor(item.type), backgroundColor: getTypeBgColor(item.type) }">
+                  <component :is="getTypeIcon(item.type)" />
+                  <span>{{ getTypeLabel(item.type) }}</span>
+                </div>
+                <div class="time-tag">
+                  {{ formatTime(item.createdAt) }}
+                </div>
+              </div>
+
+              <!-- 卡片内容 -->
+              <div class="card-body">
+                <!-- 图片预览 -->
+                <div v-if="item.type === 'image'" class="image-preview" @click.stop="showImagePreview(item)">
+                  <img :src="getImageDataUrl(item)" :alt="item.content" loading="lazy" />
+                  <div class="image-overlay">
+                    <SearchOutlined /> 预览
+                  </div>
+                </div>
+                
+                <!-- 文本内容 -->
+                <div v-else class="text-content">
+                  {{ item.content }}
                 </div>
 
-                <div class="item-actions">
-                  <a-button
-                    type="text"
-                    size="small"
-                    @click="handleToggleFavorite(item.id)"
-                    class="action-icon"
-                  >
-                    <StarFilled style="color: #fbbf24" />
-                  </a-button>
-                  <a-button
-                    type="text"
-                    size="small"
-                    @click="copyToClipboard(item)"
-                    class="action-icon"
-                  >
-                    <CopyOutlined />
-                  </a-button>
-                  <a-button
-                    type="text"
-                    size="small"
-                    danger
-                    @click="handleDelete(item.id)"
-                    class="action-icon"
-                  >
+                <!-- 备注显示 -->
+                <div v-if="item.note" class="note-display" @click.stop="openNoteModal(item)">
+                  <EditOutlined class="note-icon" />
+                  <span>{{ item.note }}</span>
+                </div>
+              </div>
+
+              <!-- 卡片底部操作栏 -->
+              <div class="card-footer">
+                <div class="action-group">
+                  <a-tooltip :title="item.isFavorite ? '取消收藏' : '收藏'">
+                    <a-button 
+                      type="text" 
+                      size="small" 
+                      class="action-btn"
+                      :class="{ 'favorite-active': item.isFavorite }"
+                      @click.stop="handleToggleFavorite(item.id)"
+                    >
+                      <component :is="item.isFavorite ? StarFilled : StarOutlined" />
+                    </a-button>
+                  </a-tooltip>
+
+                  <a-tooltip title="复制">
+                    <a-button type="text" size="small" class="action-btn" @click.stop="copyToClipboard(item)">
+                      <CopyOutlined />
+                    </a-button>
+                  </a-tooltip>
+                  
+                  <a-tooltip title="编辑备注">
+                    <a-button type="text" size="small" class="action-btn" @click.stop="openNoteModal(item)">
+                      <EditOutlined />
+                    </a-button>
+                  </a-tooltip>
+
+                  <a-tooltip v-if="item.type === 'url'" title="打开链接">
+                    <a-button type="text" size="small" class="action-btn" @click.stop="openUrl(item.content)">
+                      <GlobalOutlined />
+                    </a-button>
+                  </a-tooltip>
+                </div>
+
+                <a-popconfirm
+                  title="确定删除此记录?"
+                  @confirm="handleDelete(item.id)"
+                  ok-text="是"
+                  cancel-text="否"
+                >
+                  <a-button type="text" size="small" danger class="delete-btn">
                     <DeleteOutlined />
                   </a-button>
-                </div>
-              </div>
-
-              <!-- 图片预览 -->
-              <div v-if="item.type === 'image'" class="item-image" @click="showImagePreview(item)">
-                <img :src="getImageDataUrl(item)" :alt="item.content" />
-              </div>
-
-              <!-- 文本内容 -->
-              <div v-else class="item-content">
-                {{ item.content }}
-              </div>
-
-              <div class="item-footer">
-                <span class="item-time">{{ formatTime(item.createdAt) }}</span>
-                <span v-if="item.note" class="item-note">{{ item.note }}</span>
+                </a-popconfirm>
               </div>
             </div>
-          </div>
-        </div>
-      </a-tab-pane>
-    </a-tabs>
+          </transition-group>
+        </a-spin>
+      </div>
+    </div>
 
-    <!-- 图片预览对话框 -->
+    <!-- 图片预览弹窗 -->
     <a-modal
       v-model:open="previewVisible"
-      title="图片预览"
       :footer="null"
       width="80%"
+      centered
+      class="preview-modal"
       @cancel="closeImagePreview"
     >
-      <div class="image-preview-container">
-        <img :src="previewImage" alt="预览图片" class="preview-image" />
+      <div class="full-image-container">
+        <img :src="previewImage" alt="预览图片" />
       </div>
+    </a-modal>
+
+    <!-- 备注编辑弹窗 -->
+    <a-modal
+      v-model:open="noteModalVisible"
+      title="编辑备注"
+      @ok="saveNote"
+      centered
+      :maskClosable="false"
+    >
+      <a-textarea
+        v-model:value="editingNote"
+        placeholder="为此记录添加备注..."
+        :rows="4"
+        show-count
+        :maxlength="100"
+      />
     </a-modal>
   </div>
 </template>
 
 <style scoped>
 .clipboard-view {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: relative;
+}
+
+/* 控制面板 */
+.control-panel {
+  padding: 16px;
+  border-radius: var(--border-radius);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: var(--box-shadow-sm);
+  z-index: 10;
+}
+
+.search-bar {
+  width: 100%;
+}
+
+.custom-search :deep(.ant-input) {
+  background: transparent;
+}
+
+.custom-search :deep(.ant-input-affix-wrapper) {
+  border-radius: 10px;
+  border: 1px solid rgba(0,0,0,0.06);
+  background: rgba(255,255,255,0.6);
+  padding: 8px 11px;
+}
+
+.custom-search :deep(.ant-input-affix-wrapper:focus),
+.custom-search :deep(.ant-input-affix-wrapper-focused) {
+  box-shadow: 0 0 0 2px rgba(79, 172, 254, 0.2);
+  border-color: var(--primary-color);
+}
+
+.filter-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.actions-right {
+  display: flex;
+  gap: 4px;
+}
+
+.icon-btn {
+  color: var(--text-secondary);
+  transition: all 0.3s;
+}
+
+.icon-btn:hover {
+  background: rgba(0,0,0,0.05);
+  color: var(--primary-color);
+}
+
+.icon-btn.ant-btn-dangerous:hover {
+  color: #ff4d4f;
+  background: rgba(255, 77, 79, 0.1);
+}
+
+/* 主要内容区 */
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden; /* 防止双滚动条 */
+}
+
+/* 标签页自定义 */
+.custom-tabs :deep(.ant-tabs-nav) {
+  margin-bottom: 12px;
+}
+
+.custom-tabs :deep(.ant-tabs-tab) {
+  padding: 8px 0;
+  margin-right: 24px;
+  color: var(--text-tertiary);
+  transition: all 0.3s;
+}
+
+.custom-tabs :deep(.ant-tabs-tab:hover) {
+  color: var(--primary-color);
+}
+
+.custom-tabs :deep(.ant-tabs-tab-active) .ant-tabs-tab-btn {
+  color: var(--primary-color);
+  font-weight: 600;
+}
+
+.custom-tabs :deep(.ant-tabs-ink-bar) {
+  background: var(--primary-gradient);
+  height: 3px;
+  border-radius: 3px;
+}
+
+/* 列表容器 */
+.list-container {
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 6px; /* 给滚动条留点空间 */
   padding-bottom: 20px;
 }
 
-/* 工具栏 */
-.toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+.items-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 16px;
-  margin-bottom: 20px;
-  padding: 20px;
-  background: rgba(255, 255, 255, 0.8);
-  backdrop-filter: blur(10px);
-  border-radius: 16px;
-  box-shadow: var(--box-shadow);
 }
 
-.toolbar-left {
-  flex: 1;
-  max-width: 400px;
-}
-
-.search-input {
+/* 卡片样式 */
+.clipboard-card {
   border-radius: 12px;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-}
-
-.search-input:focus,
-.search-input:hover {
-  border-color: var(--primary-color);
-}
-
-.toolbar-right {
-  display: flex;
-  gap: 12px;
-}
-
-.action-btn {
-  border-radius: 8px;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  transition: all 0.3s ease;
-}
-
-.action-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-}
-
-/* 统计信息栏 */
-.stats-bar {
-  display: flex;
-  gap: 16px;
-  margin-bottom: 20px;
-  padding: 16px 20px;
-  background: rgba(255, 255, 255, 0.8);
-  backdrop-filter: blur(10px);
-  border-radius: 16px;
-  box-shadow: var(--box-shadow);
-}
-
-.stat-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.stat-label {
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.stat-value {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.favorite-color {
-  color: #fbbf24;
-}
-
-/* 标签页 */
-.custom-tabs {
-  background: rgba(255, 255, 255, 0.8);
-  backdrop-filter: blur(10px);
-  border-radius: 16px;
-  box-shadow: var(--box-shadow);
-  padding: 20px;
-}
-
-:deep(.ant-tabs-nav) {
-  margin-bottom: 20px;
-}
-
-:deep(.ant-tabs-tab) {
-  border-radius: 8px;
-  transition: all 0.3s ease;
-}
-
-:deep(.ant-tabs-tab-active) {
-  background: var(--primary-gradient);
-}
-
-:deep(.ant-tabs-tab-active .ant-tabs-tab-btn) {
-  color: white !important;
-}
-
-/* 项目容器 */
-.items-container {
-  min-height: 400px;
-}
-
-.items-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  max-height: 600px;
-  overflow-y: auto;
-  padding-right: 8px;
-}
-
-/* 剪贴板项目卡片 */
-.clipboard-item {
   padding: 16px;
-  background: #f8fafc;
-  border: 1px solid rgba(0, 0, 0, 0.05);
-  border-radius: 12px;
-  transition: all 0.3s ease;
-  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  position: relative;
+  overflow: hidden;
+  height: 200px; /* 固定高度，统一视觉 */
 }
 
-.clipboard-item:hover {
-  background: white;
-  border-color: var(--primary-color);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(79, 172, 254, 0.15);
+.clipboard-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--box-shadow-hover);
+  border-color: rgba(79, 172, 254, 0.3);
+  background: #fff;
 }
 
-.item-header {
+.clipboard-card.is-favorite {
+  border-color: rgba(251, 191, 36, 0.4);
+  background: linear-gradient(to bottom right, rgba(255, 255, 255, 0.9), rgba(255, 251, 235, 0.6));
+}
+
+.card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
 }
 
-.item-type {
+.type-tag {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 14px;
-}
-
-.type-label {
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 11px;
   font-weight: 600;
-  font-size: 12px;
-  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
-.item-actions {
+.time-tag {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.card-body {
+  flex: 1;
+  overflow: hidden;
   display: flex;
-  gap: 4px;
+  flex-direction: column;
 }
 
-.action-icon {
-  transition: all 0.3s ease;
-}
-
-.action-icon:hover {
-  transform: scale(1.1);
-}
-
-.item-content {
-  font-size: 14px;
+/* 文本内容 */
+.text-content {
+  font-size: 13px;
   color: var(--text-primary);
   line-height: 1.6;
+  white-space: pre-wrap;
   word-break: break-all;
-  max-height: 100px;
   overflow: hidden;
-  text-overflow: ellipsis;
   display: -webkit-box;
   -webkit-line-clamp: 4;
   -webkit-box-orient: vertical;
-  margin-bottom: 12px;
+  mask-image: linear-gradient(to bottom, black 80%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black 80%, transparent 100%);
 }
 
-.item-footer {
+/* 图片预览小图 */
+.image-preview {
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #f1f5f9;
+  position: relative;
+  cursor: zoom-in;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.image-preview img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.image-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 0.2s;
+  backdrop-filter: blur(2px);
+}
+
+.image-preview:hover .image-overlay {
+  opacity: 1;
+}
+
+/* 备注 */
+.note-display {
+  margin-top: auto;
+  padding-top: 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.note-display:hover {
+  color: var(--primary-color);
+}
+
+.note-icon {
+  font-size: 12px;
+}
+
+/* 底部操作栏 */
+.card-footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 12px;
-  color: var(--text-tertiary);
+  padding-top: 8px;
+  border-top: 1px solid rgba(0,0,0,0.03);
+  margin-top: auto; /* 确保在底部 */
 }
 
-.item-time {
-  color: var(--text-tertiary);
+.action-group {
+  display: flex;
+  gap: 4px;
 }
 
-.item-note {
+.action-btn {
+  color: var(--text-secondary);
+}
+
+.action-btn:hover {
   color: var(--primary-color);
-  font-style: italic;
+  background: rgba(79, 172, 254, 0.1);
+}
+
+.favorite-active {
+  color: #fbbf24 !important;
+}
+
+.delete-btn {
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.clipboard-card:hover .delete-btn {
+  opacity: 1;
 }
 
 /* 空状态 */
 .empty-state {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
   align-items: center;
-  min-height: 400px;
+  justify-content: center;
+  height: 400px;
+  color: var(--text-tertiary);
 }
 
-.empty-icon {
-  font-size: 64px;
+.empty-icon-wrapper {
+  font-size: 48px;
+  color: #e2e8f0;
   margin-bottom: 16px;
 }
 
-/* 图片项目样式 */
-.item-image {
-  margin-bottom: 12px;
-  cursor: pointer;
-  border-radius: 8px;
-  overflow: hidden;
-  background: #f8fafc;
+/* 列表动画 */
+.list-enter-active,
+.list-leave-active {
+  transition: all 0.4s ease;
+}
+
+.list-enter-from,
+.list-leave-to {
+  opacity: 0;
+  transform: translateY(20px);
+}
+
+/* 全图预览 */
+.full-image-container {
   display: flex;
   justify-content: center;
   align-items: center;
-  max-height: 200px;
-  transition: all 0.3s ease;
+  background: transparent;
 }
 
-.item-image:hover {
-  transform: scale(1.02);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-}
-
-.item-image img {
+.full-image-container img {
   max-width: 100%;
-  max-height: 200px;
+  max-height: 80vh;
   object-fit: contain;
-}
-
-/* 图片预览对话框 */
-.image-preview-container {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 400px;
-  background: #f8fafc;
   border-radius: 8px;
-  padding: 20px;
-}
-
-.preview-image {
-  max-width: 100%;
-  max-height: 70vh;
-  object-fit: contain;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.3);
 }
 </style>

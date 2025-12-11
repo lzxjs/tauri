@@ -11,6 +11,7 @@ import { loadClipboardItems, addClipboardItem } from './composables/useClipboard
 const route = useRoute();
 const router = useRouter();
 const LAST_ROUTE_KEY = "app_last_route_name";
+const COLLAPSED_KEY = "app_sider_collapsed";
 
 // 顶部功能菜单：launcher(批量启动器) / scraper(网页爬虫) / system(系统信息)
 const activeMenu = computed(() => route.name || "launcher");
@@ -24,6 +25,14 @@ watch(
     }
   }
 );
+
+// 侧边栏收起状态
+const collapsed = ref(false);
+
+// 监听侧边栏收起状态变化，保存到 localStorage
+watch(collapsed, (newValue) => {
+  localStorage.setItem(COLLAPSED_KEY, String(newValue));
+});
 
 // 开机启动状态
 const autostartEnabled = ref(false);
@@ -121,6 +130,12 @@ onMounted(() => {
     });
   }
 
+  // 恢复侧边栏收起状态
+  const savedCollapsed = localStorage.getItem(COLLAPSED_KEY);
+  if (savedCollapsed !== null) {
+    collapsed.value = savedCollapsed === 'true';
+  }
+
   // 启动全局网络流量统计服务
   startNetworkTrafficService();
 
@@ -138,7 +153,14 @@ onUnmounted(() => {
 <template>
   <div class="container">
     <a-layout style="min-height: 100vh">
-      <a-layout-sider width="260" class="sider" theme="light">
+      <a-layout-sider
+        v-model:collapsed="collapsed"
+        :collapsedWidth="80"
+        :trigger="null"
+        width="260"
+        class="sider"
+        theme="light"
+      >
         <div class="brand">
           <div class="logo-box">
             <span class="logo-icon">🍅</span>
@@ -172,6 +194,10 @@ onUnmounted(() => {
               <span class="menu-icon-wrapper">⏺️</span>
               <span class="menu-text">动作录制</span>
             </a-menu-item>
+            <a-menu-item key="iframe">
+              <span class="menu-icon-wrapper">🌐</span>
+              <span class="menu-text">网页浏览</span>
+            </a-menu-item>
             <!-- <a-menu-item key="scraper">
               <span class="menu-icon-wrapper">🕷️</span>
               <span class="menu-text">网页爬虫</span>
@@ -180,6 +206,11 @@ onUnmounted(() => {
         </div>
 
         <div class="sider-footer">
+          <div class="collapse-trigger" @click="collapsed = !collapsed">
+            <span class="collapse-icon">{{ collapsed ? '→' : '←' }}</span>
+            <span v-if="!collapsed" class="collapse-text">收起</span>
+          </div>
+
            <div class="autostart-card">
              <div class="autostart-info">
                <span class="autostart-title">开机启动</span>
@@ -236,8 +267,10 @@ onUnmounted(() => {
   height: 100px;
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   padding: 0 28px;
   gap: 16px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .logo-box {
@@ -342,6 +375,44 @@ onUnmounted(() => {
 
 .sider-footer {
   padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.collapse-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+  background: rgba(79, 172, 254, 0.1);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  user-select: none;
+}
+
+.collapse-trigger:hover {
+  background: rgba(79, 172, 254, 0.2);
+  transform: translateX(-2px);
+}
+
+.collapse-icon {
+  font-size: 16px;
+  font-weight: bold;
+  color: var(--primary-color);
+  transition: transform 0.3s ease;
+}
+
+.collapse-trigger:hover .collapse-icon {
+  transform: scale(1.2);
+}
+
+.collapse-text {
+  font-size: 13px;
+  color: var(--primary-color);
+  font-weight: 600;
 }
 
 .autostart-card {
@@ -457,5 +528,85 @@ onUnmounted(() => {
 .fade-leave-from {
   opacity: 1;
   transform: translateY(0);
+}
+
+/* 侧边栏收起状态样式 */
+.sider.ant-layout-sider-collapsed .brand {
+  padding: 20px 0 !important;
+  height: auto;
+  justify-content: center !important;
+  width: 100%;
+}
+
+.sider.ant-layout-sider-collapsed .brand-text {
+  display: none;
+}
+
+.sider.ant-layout-sider-collapsed .logo-box {
+  margin: 0 !important;
+  width: 36px !important;
+  height: 36px !important;
+  border-radius: 10px;
+}
+
+.sider.ant-layout-sider-collapsed .menu-container {
+  padding: 10px 12px;
+}
+
+.sider.ant-layout-sider-collapsed .ant-menu-item {
+  padding-left: 0 !important;
+  justify-content: center;
+  height: 48px !important;
+  line-height: 48px !important;
+  margin-bottom: 6px !important;
+}
+
+.sider.ant-layout-sider-collapsed .menu-icon-wrapper {
+  margin-right: 0;
+  font-size: 22px;
+  width: 17px;
+}
+
+.sider.ant-layout-sider-collapsed .menu-text {
+  display: none;
+}
+
+.sider.ant-layout-sider-collapsed .sider-footer {
+  padding: 16px 12px;
+}
+
+.sider.ant-layout-sider-collapsed .collapse-trigger {
+  padding: 10px;
+}
+
+.sider.ant-layout-sider-collapsed .collapse-text {
+  display: none;
+}
+
+.sider.ant-layout-sider-collapsed .autostart-card {
+  flex-direction: column;
+  padding: 10px;
+  gap: 0;
+  justify-content: center;
+}
+
+.sider.ant-layout-sider-collapsed .autostart-info {
+  display: none;
+}
+
+/* 侧边栏过渡动画 */
+.sider {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+:deep(.ant-layout-sider-children) {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.brand-text,
+.menu-text,
+.collapse-text,
+.autostart-info {
+  transition: opacity 0.2s ease;
 }
 </style>

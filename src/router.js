@@ -4,6 +4,7 @@ import ScraperView from './views/ScraperView.vue';
 import SystemView from './views/SystemView.vue';
 import RecorderView from './views/RecorderView.vue';
 import ClipboardView from './views/ClipboardView.vue';
+import IframeView from './views/IframeView.vue';
 
 const routes = [
   { path: '/', redirect: '/launcher' },
@@ -12,6 +13,7 @@ const routes = [
   { path: '/system', name: 'system', component: SystemView },
   { path: '/recorder', name: 'recorder', component: RecorderView },
   { path: '/clipboard', name: 'clipboard', component: ClipboardView },
+  { path: '/iframe', name: 'iframe', component: IframeView },
 ];
 
 export const router = createRouter({

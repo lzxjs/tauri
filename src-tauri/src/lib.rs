@@ -388,6 +388,72 @@ pub fn run() {
                 None, // 不传递额外参数
             ))?;
 
+            // 创建系统托盘
+            #[cfg(desktop)]
+            {
+                use tauri::menu::{Menu, MenuItem};
+                use tauri::tray::{TrayIconBuilder, TrayIconEvent};
+                use tauri::Manager;
+
+                let handle = app.handle();
+
+                // 创建托盘菜单
+                let show_item = MenuItem::with_id(handle, "show", "显示窗口", true, None::<&str>)?;
+                let quit_item = MenuItem::with_id(handle, "quit", "退出", true, None::<&str>)?;
+                let menu = Menu::with_items(handle, &[&show_item, &quit_item])?;
+
+                // 创建托盘图标
+                let _tray = TrayIconBuilder::new()
+                    .icon(app.default_window_icon().unwrap().clone())
+                    .menu(&menu)
+                    .show_menu_on_left_click(false)
+                    .on_menu_event(move |app, event| {
+                        match event.id.as_ref() {
+                            "show" => {
+                                if let Some(window) = app.get_webview_window("main") {
+                                    let _ = window.show();
+                                    let _ = window.set_focus();
+                                }
+                            }
+                            "quit" => {
+                                app.exit(0);
+                            }
+                            _ => {}
+                        }
+                    })
+                    .on_tray_icon_event(|tray, event| {
+                        use tauri::tray::MouseButton;
+                        match event {
+                            TrayIconEvent::Click { button, .. } => {
+                                // 只处理左键点击
+                                if button == MouseButton::Left {
+                                    let app = tray.app_handle();
+                                    if let Some(window) = app.get_webview_window("main") {
+                                        let _ = window.show();
+                                        let _ = window.set_focus();
+                                    }
+                                }
+                                // 右键点击由系统自动显示菜单，不需要处理
+                            }
+                            TrayIconEvent::DoubleClick { button, .. } => {
+                                if button == MouseButton::Left {
+                                    let app = tray.app_handle();
+                                    if let Some(window) = app.get_webview_window("main") {
+                                        if window.is_visible().unwrap_or(false) {
+                                            let _ = window.hide();
+                                        } else {
+                                            let _ = window.show();
+                                            let _ = window.set_focus();
+                                        }
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    })
+                    .build(app)?;
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -417,6 +483,25 @@ pub fn run() {
             clipboard::start_clipboard_monitor,
             clipboard::stop_clipboard_monitor
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            use tauri::Manager;
+
+            // 拦截窗口关闭事件
+            if let tauri::RunEvent::WindowEvent {
+                label,
+                event: tauri::WindowEvent::CloseRequested { api, .. },
+                ..
+            } = event
+            {
+                if label == "main" {
+                    let window = app.get_webview_window(&label).unwrap();
+                    // 阻止默认关闭行为
+                    api.prevent_close();
+                    // 隐藏窗口而不是关闭
+                    let _ = window.hide();
+                }
+            }
+        });
 }

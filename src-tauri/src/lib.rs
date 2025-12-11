@@ -405,6 +405,7 @@ pub fn run() {
                 // 创建托盘图标
                 let _tray = TrayIconBuilder::new()
                     .icon(app.default_window_icon().unwrap().clone())
+                    .tooltip("小茄的工具箱")
                     .menu(&menu)
                     .show_menu_on_left_click(false)
                     .on_menu_event(move |app, event| {

@@ -14,7 +14,8 @@
       "Bash(timeout /t 15 /nobreak)",
       "Bash(cargo build:*)",
       "Bash(npm run tauri:*)",
-      "Bash(cmd /c taskkill /F /PID 28172)"
+      "Bash(cmd /c taskkill /F /PID 28172)",
+      "Bash(npm run tauri:build)"
     ]
   }
 }

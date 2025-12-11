@@ -13,6 +13,7 @@ use std::path::Path;
 use std::process::Command as StdCommand;
 use std::sync::Arc;
 use sysinfo::{Disks, Networks, System};
+use tauri::Manager;
 
 #[derive(Serialize, Deserialize)]
 struct SystemInfo {
@@ -367,6 +368,13 @@ pub fn run() {
     start_monitor(Arc::clone(&recorder), Arc::clone(&player));
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
@@ -427,20 +435,18 @@ pub fn run() {
                     .tooltip("小茄的工具箱")
                     .menu(&menu)
                     .show_menu_on_left_click(false)
-                    .on_menu_event(move |app, event| {
-                        match event.id.as_ref() {
-                            "show" => {
-                                if let Some(window) = app.get_webview_window("main") {
-                                    let _ = window.unminimize();
-                                    let _ = window.show();
-                                    let _ = window.set_focus();
-                                }
+                    .on_menu_event(move |app, event| match event.id.as_ref() {
+                        "show" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.unminimize();
+                                let _ = window.show();
+                                let _ = window.set_focus();
                             }
-                            "quit" => {
-                                app.exit(0);
-                            }
-                            _ => {}
                         }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
                     })
                     .on_tray_icon_event(|tray, event| {
                         use tauri::tray::MouseButton;

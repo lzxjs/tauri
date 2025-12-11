@@ -1,10 +1,10 @@
 use arboard::{Clipboard, ImageData};
 use base64::{engine::general_purpose, Engine as _};
+use serde::Serialize;
 use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
-use serde::Serialize;
 
 // 全局剪贴板监听状态
 static CLIPBOARD_MONITOR_RUNNING: Mutex<bool> = Mutex::new(false);

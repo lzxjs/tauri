@@ -903,11 +903,18 @@ onUnmounted(() => {
 
           <div class="divider-vertical"></div>
 
-          <a-tooltip title="清空非收藏历史">
-            <a-button type="text" @click="handleClearHistory" class="icon-btn">
-              <ClearOutlined />
-            </a-button>
-          </a-tooltip>
+          <a-popconfirm
+            title="确定要清空非收藏记录吗？"
+            ok-text="确定"
+            cancel-text="取消"
+            @confirm="handleClearHistory"
+          >
+            <a-tooltip title="清空非收藏历史">
+              <a-button type="text" class="icon-btn">
+                <ClearOutlined />
+              </a-button>
+            </a-tooltip>
+          </a-popconfirm>
           <a-popconfirm
             title="确定要清空所有记录吗？包括收藏项！"
             ok-text="确定"
@@ -963,14 +970,14 @@ onUnmounted(() => {
     <!-- 主要内容区 -->
     <div class="main-content">
       <a-tabs v-model:activeKey="activeTab" class="custom-tabs" :animated="true">
-        <a-tab-pane key="all" tab="最近记录">
+        <a-tab-pane key="all">
           <template #tab>
-            <span><BarsOutlined /> 最近记录</span>
+            <span><BarsOutlined /> 最近记录 ({{ stats.total }})</span>
           </template>
         </a-tab-pane>
-        <a-tab-pane key="favorites" tab="我的收藏">
+        <a-tab-pane key="favorites">
           <template #tab>
-             <span><StarFilled /> 我的收藏</span>
+             <span><StarFilled /> 我的收藏 ({{ stats.favorites }})</span>
           </template>
         </a-tab-pane>
       </a-tabs>

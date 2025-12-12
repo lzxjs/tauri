@@ -179,7 +179,7 @@ const generatePermanent = () => {
       // 实际上前6位规则复杂，这里模拟: 9 + 任意5位数字(模拟地区)
       // 或者为了看起来像真的，用 9 + 11000 (北京)
       const regionCode =
-        "9" + String(Math.floor(Math.random() * 90000) + 10000).substring(1); // 9xxxxx
+        "9" + String(Math.floor(Math.random() * 90000) + 10000); // 9xxxxx (6位)
       const date = `${birthYear}${String(birthMonth).padStart(2, "0")}${String(
         birthDay
       ).padStart(2, "0")}`;
@@ -451,10 +451,19 @@ const isDragging = ref(false);
 const selectedField = ref(null);
 const dragOffset = ref({ x: 0, y: 0 });
 
+// 人脸图片相关
+const faceImage = ref(null);
+const facePosition = ref({ x: 100, y: 100, width: 150, height: 200 });
+const isDraggingFace = ref(false);
+const isResizingFace = ref(false);
+const faceResizeHandle = ref(null); // 'se' | 'sw' | 'ne' | 'nw'
+const faceStartPos = ref({ x: 0, y: 0 });
+
 // 预设证件图片模板列表
 const presetTemplates = ref([
   { value: 'sfz1.jpg', label: '身份证正面模板1' },
-  { value: 'sfz2.jpg', label: '身份证正面模板2' }
+  { value: 'sfz2.jpg', label: '身份证正面模板2' },
+  { value: 'sfz1-back.jpg', label: '身份证背面模板1' }
 ]);
 const selectedPresetTemplate = ref(null);
 
@@ -514,6 +523,44 @@ const loadPresetTemplate = async () => {
   }
 };
 
+// 上传人脸图片
+const uploadFaceImage = async () => {
+  // 检查是否已上传证件图片
+  if (!backgroundImage.value) {
+    message.warning("请先上传证件图片或选择预设模板");
+    return;
+  }
+
+  try {
+    const file = await open({
+      multiple: false,
+      filters: [{ name: "Image", extensions: ["png", "jpg", "jpeg"] }],
+    });
+    if (file) {
+      const bytes = await readFile(file);
+      const blob = new Blob([bytes]);
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      img.onload = () => {
+        faceImage.value = img;
+        // 根据图片比例设置初始大小
+        const aspectRatio = img.width / img.height;
+        facePosition.value = {
+          x: 100,
+          y: 100,
+          width: 150,
+          height: Math.round(150 / aspectRatio)
+        };
+        drawCanvas();
+        message.success("人脸图片上传成功");
+      };
+      img.src = url;
+    }
+  } catch (error) {
+    message.error("人脸图片上传失败: " + error.message);
+  }
+};
+
 // 上传图片
 const uploadImage = async () => {
   try {
@@ -557,6 +604,41 @@ const drawCanvas = () => {
   if (backgroundImage.value) {
     ctx.drawImage(backgroundImage.value, 0, 0, canvas.width, canvas.height);
   }
+
+  // 绘制人脸图片
+  if (faceImage.value) {
+    ctx.drawImage(
+      faceImage.value,
+      facePosition.value.x,
+      facePosition.value.y,
+      facePosition.value.width,
+      facePosition.value.height
+    );
+
+    // 绘制边框和调整手柄
+    ctx.strokeStyle = '#1890ff';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(
+      facePosition.value.x,
+      facePosition.value.y,
+      facePosition.value.width,
+      facePosition.value.height
+    );
+
+    // 绘制四个角的调整手柄
+    const handleSize = 8;
+    ctx.fillStyle = '#1890ff';
+    const corners = [
+      { x: facePosition.value.x, y: facePosition.value.y }, // 左上
+      { x: facePosition.value.x + facePosition.value.width, y: facePosition.value.y }, // 右上
+      { x: facePosition.value.x, y: facePosition.value.y + facePosition.value.height }, // 左下
+      { x: facePosition.value.x + facePosition.value.width, y: facePosition.value.y + facePosition.value.height }, // 右下
+    ];
+    corners.forEach(corner => {
+      ctx.fillRect(corner.x - handleSize / 2, corner.y - handleSize / 2, handleSize, handleSize);
+    });
+  }
+
   textFields.value.forEach((field) => {
     if (field.text) {
       // 优先使用字段自己的fontSize，否则使用全局fontSize
@@ -592,6 +674,37 @@ const drawCanvas = () => {
   });
 };
 
+// 检测是否点击在调整手柄上
+const getResizeHandle = (x, y) => {
+  if (!faceImage.value) return null;
+  const handleSize = 8;
+  const tolerance = 5;
+  const pos = facePosition.value;
+
+  const handles = [
+    { name: 'nw', x: pos.x, y: pos.y },
+    { name: 'ne', x: pos.x + pos.width, y: pos.y },
+    { name: 'sw', x: pos.x, y: pos.y + pos.height },
+    { name: 'se', x: pos.x + pos.width, y: pos.y + pos.height },
+  ];
+
+  for (const handle of handles) {
+    if (Math.abs(x - handle.x) <= handleSize / 2 + tolerance &&
+        Math.abs(y - handle.y) <= handleSize / 2 + tolerance) {
+      return handle.name;
+    }
+  }
+  return null;
+};
+
+// 检测是否点击在人脸图片上
+const isPointInFace = (x, y) => {
+  if (!faceImage.value) return false;
+  const pos = facePosition.value;
+  return x >= pos.x && x <= pos.x + pos.width &&
+         y >= pos.y && y <= pos.y + pos.height;
+};
+
 // 鼠标按下
 const handleMouseDown = (e) => {
   const canvas = canvasRef.value;
@@ -601,6 +714,27 @@ const handleMouseDown = (e) => {
   const scaleY = canvas.height / rect.height;
   const x = (e.clientX - rect.left) * scaleX;
   const y = (e.clientY - rect.top) * scaleY;
+
+  // 优先检测人脸图片的调整手柄
+  const handle = getResizeHandle(x, y);
+  if (handle) {
+    isResizingFace.value = true;
+    faceResizeHandle.value = handle;
+    faceStartPos.value = { x, y };
+    return;
+  }
+
+  // 检测是否点击在人脸图片上
+  if (isPointInFace(x, y)) {
+    isDraggingFace.value = true;
+    faceStartPos.value = {
+      x: x - facePosition.value.x,
+      y: y - facePosition.value.y
+    };
+    return;
+  }
+
+  // 检测文本字段
   const ctx = canvas.getContext("2d");
   selectedField.value = textFields.value.find((field) => {
     if (!field.text) return false;
@@ -621,21 +755,75 @@ const handleMouseDown = (e) => {
 
 // 鼠标移动
 const handleMouseMove = (e) => {
-  if (!isDragging.value) return;
   const canvas = canvasRef.value;
   if (!canvas) return;
   const rect = canvas.getBoundingClientRect();
   const scaleX = canvas.width / rect.width;
   const scaleY = canvas.height / rect.height;
-  selectedField.value.x = (e.clientX - rect.left) * scaleX - dragOffset.value.x;
-  selectedField.value.y = (e.clientY - rect.top) * scaleY - dragOffset.value.y;
-  drawCanvas();
+  const x = (e.clientX - rect.left) * scaleX;
+  const y = (e.clientY - rect.top) * scaleY;
+
+  // 处理人脸图片调整大小
+  if (isResizingFace.value) {
+    const dx = x - faceStartPos.value.x;
+    const dy = y - faceStartPos.value.y;
+    const pos = facePosition.value;
+    const handle = faceResizeHandle.value;
+
+    if (handle === 'se') {
+      // 右下角：增加宽高
+      facePosition.value.width = Math.max(50, pos.width + dx);
+      facePosition.value.height = Math.max(50, pos.height + dy);
+    } else if (handle === 'sw') {
+      // 左下角：改变x和宽度，增加高度
+      const newWidth = Math.max(50, pos.width - dx);
+      facePosition.value.x = pos.x + (pos.width - newWidth);
+      facePosition.value.width = newWidth;
+      facePosition.value.height = Math.max(50, pos.height + dy);
+    } else if (handle === 'ne') {
+      // 右上角：增加宽度，改变y和高度
+      facePosition.value.width = Math.max(50, pos.width + dx);
+      const newHeight = Math.max(50, pos.height - dy);
+      facePosition.value.y = pos.y + (pos.height - newHeight);
+      facePosition.value.height = newHeight;
+    } else if (handle === 'nw') {
+      // 左上角：改变x和宽度，改变y和高度
+      const newWidth = Math.max(50, pos.width - dx);
+      const newHeight = Math.max(50, pos.height - dy);
+      facePosition.value.x = pos.x + (pos.width - newWidth);
+      facePosition.value.y = pos.y + (pos.height - newHeight);
+      facePosition.value.width = newWidth;
+      facePosition.value.height = newHeight;
+    }
+
+    faceStartPos.value = { x, y };
+    drawCanvas();
+    return;
+  }
+
+  // 处理人脸图片拖动
+  if (isDraggingFace.value) {
+    facePosition.value.x = x - faceStartPos.value.x;
+    facePosition.value.y = y - faceStartPos.value.y;
+    drawCanvas();
+    return;
+  }
+
+  // 处理文本字段拖动
+  if (isDragging.value) {
+    selectedField.value.x = x - dragOffset.value.x;
+    selectedField.value.y = y - dragOffset.value.y;
+    drawCanvas();
+  }
 };
 
 // 鼠标释放
 const handleMouseUp = () => {
   isDragging.value = false;
+  isDraggingFace.value = false;
+  isResizingFace.value = false;
   selectedField.value = null;
+  faceResizeHandle.value = null;
 };
 
 // 清空表单内容
@@ -658,6 +846,59 @@ const clearForm = () => {
   message.success("已清空所有表单内容");
 };
 
+// 绘制最终图片（不含边框和手柄）
+const drawFinalCanvas = () => {
+  const canvas = canvasRef.value;
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // 绘制背景图片
+  if (backgroundImage.value) {
+    ctx.drawImage(backgroundImage.value, 0, 0, canvas.width, canvas.height);
+  }
+
+  // 绘制人脸图片（不含边框）
+  if (faceImage.value) {
+    ctx.drawImage(
+      faceImage.value,
+      facePosition.value.x,
+      facePosition.value.y,
+      facePosition.value.width,
+      facePosition.value.height
+    );
+  }
+
+  // 绘制文本字段
+  textFields.value.forEach((field) => {
+    if (field.text) {
+      const fontSize = field.fontSize || editorConfig.value.fontSize;
+      ctx.font = `${fontSize}px ${editorConfig.value.fontFamily}`;
+
+      if (field.multiline && field.text.includes('\n')) {
+        const lines = field.text.split('\n');
+        const lineHeight = fontSize * 1.2;
+        lines.forEach((line, index) => {
+          if (line) {
+            const textWidth = ctx.measureText(line).width;
+            const currentY = field.y + (index * lineHeight);
+            ctx.fillStyle = editorConfig.value.backgroundColor;
+            ctx.fillRect(field.x - 2, currentY - fontSize, textWidth + 4, fontSize + 4);
+            ctx.fillStyle = editorConfig.value.fontColor;
+            ctx.fillText(line, field.x, currentY);
+          }
+        });
+      } else {
+        const textWidth = ctx.measureText(field.text).width;
+        ctx.fillStyle = editorConfig.value.backgroundColor;
+        ctx.fillRect(field.x - 2, field.y - fontSize, textWidth + 4, fontSize + 4);
+        ctx.fillStyle = editorConfig.value.fontColor;
+        ctx.fillText(field.text, field.x, field.y);
+      }
+    }
+  });
+};
+
 // 保存图片
 const saveImage = async () => {
   const canvas = canvasRef.value;
@@ -666,6 +907,9 @@ const saveImage = async () => {
     return;
   }
   try {
+    // 先绘制不含边框的最终图片
+    drawFinalCanvas();
+
     const desktop = (await homeDir()) + "Desktop/";
     const timestamp = new Date()
       .toISOString()
@@ -680,10 +924,19 @@ const saveImage = async () => {
         const arrayBuffer = await blob.arrayBuffer();
         const bytes = new Uint8Array(arrayBuffer);
         await writeFile(filePath, bytes);
+
+        // 保存后恢复带边框的显示
+        drawCanvas();
+
         message.success("图片已保存到桌面");
       }, "image/png");
+    } else {
+      // 用户取消保存，恢复带边框的显示
+      drawCanvas();
     }
   } catch (error) {
+    // 出错时也恢复带边框的显示
+    drawCanvas();
     message.error("保存失败: " + error.message);
   }
 };
@@ -713,7 +966,7 @@ const saveImage = async () => {
               @click="activeTab = 'idcard'"
             >
               <UserOutlined />
-              <span>居民身份证</span>
+              <span>身份证</span>
             </div>
             <div
               class="nav-item"
@@ -737,7 +990,7 @@ const saveImage = async () => {
               @click="activeTab = 'permanent'"
             >
               <GlobalOutlined />
-              <span>永久居留证</span>
+              <span>永居证</span>
             </div>
             <div
               class="nav-item"
@@ -1039,6 +1292,13 @@ const saveImage = async () => {
                     上传证件图片
                   </a-button>
                 </a-form-item>
+                <a-form-item>
+                  <a-button @click="uploadFaceImage" block>
+                    <template #icon><UserOutlined /></template>
+                    上传人脸图片
+                  </a-button>
+                </a-form-item>
+                
                 <a-form-item label="预设模板">
                   <a-select
                     v-model:value="selectedPresetTemplate"
@@ -1081,7 +1341,7 @@ const saveImage = async () => {
                 <a-row :gutter="12">
                   <a-col :span="8">
                     <a-form-item label="字体大小">
-                      <a-slider v-model:value="editorConfig.fontSize" :min="12" :max="48" @change="drawCanvas" />
+                      <a-slider v-model:value="editorConfig.fontSize" :min="10" :max="80" @change="drawCanvas" />
                     </a-form-item>
                   </a-col>
                   <a-col :span="8">
@@ -1176,6 +1436,7 @@ const saveImage = async () => {
           <div class="results-scroll-area">
             <div v-if="activeTab === 'editor'" class="canvas-container">
               <canvas
+                v-if="backgroundImage"
                 ref="canvasRef"
                 @mousedown="handleMouseDown"
                 @mousemove="handleMouseMove"

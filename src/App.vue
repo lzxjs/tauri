@@ -3,11 +3,14 @@ import { computed, ref, onMounted, onUnmounted, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { message } from "ant-design-vue";
-import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
-import { loadClipboardItems, addClipboardItem } from './composables/useClipboardStore';
-import { useUpdater } from './composables/useUpdater';
-import { Store } from '@tauri-apps/plugin-store';
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import {
+  loadClipboardItems,
+  addClipboardItem,
+} from "./composables/useClipboardStore";
+import { useUpdater } from "./composables/useUpdater";
+import { Store } from "@tauri-apps/plugin-store";
 
 const route = useRoute();
 const router = useRouter();
@@ -49,7 +52,7 @@ let unlistenClipboard = null;
 
 // 更新检查
 const { checkForUpdates } = useUpdater();
-const version = '0.1.0';
+const version = "0.1.0";
 
 // 处理菜单点击，使用 vue-router 切换路径
 const handleMenuClick = ({ key }) => {
@@ -94,9 +97,9 @@ const toggleSilentStart = async (checked) => {
   silentStartLoading.value = true;
   try {
     if (!store) {
-      store = await Store.load('settings.json');
+      store = await Store.load("settings.json");
     }
-    await store.set('silent_start', checked);
+    await store.set("silent_start", checked);
     await store.save();
     silentStartEnabled.value = checked;
     message.success(checked ? "已启用静默启动" : "已禁用静默启动");
@@ -114,37 +117,37 @@ const startClipboardMonitoring = async () => {
   try {
     // 加载历史剪贴板数据
     await loadClipboardItems();
-    console.log('[ClipboardService] 历史数据已加载');
+    console.log("[ClipboardService] 历史数据已加载");
 
     // 启动后端监听
-    await invoke('start_clipboard_monitor');
-    console.log('[ClipboardService] 后端监听已启动');
+    await invoke("start_clipboard_monitor");
+    console.log("[ClipboardService] 后端监听已启动");
 
     // 监听剪贴板变化事件
-    unlistenClipboard = await listen('clipboard-changed', async (event) => {
-      console.log('[ClipboardService] 收到剪贴板变化事件:', event.payload);
+    unlistenClipboard = await listen("clipboard-changed", async (event) => {
+      console.log("[ClipboardService] 收到剪贴板变化事件:", event.payload);
       const content = event.payload;
       await addClipboardItem(content);
-      console.log('[ClipboardService] 剪贴板项已添加');
+      console.log("[ClipboardService] 剪贴板项已添加");
     });
 
-    console.log('[ClipboardService] 剪贴板监听已启动');
+    console.log("[ClipboardService] 剪贴板监听已启动");
   } catch (error) {
-    console.error('[ClipboardService] 启动剪贴板监听失败:', error);
+    console.error("[ClipboardService] 启动剪贴板监听失败:", error);
   }
 };
 
 // 停止剪贴板监听服务
 const stopClipboardMonitoring = async () => {
   try {
-    await invoke('stop_clipboard_monitor');
+    await invoke("stop_clipboard_monitor");
     if (unlistenClipboard) {
       unlistenClipboard();
       unlistenClipboard = null;
     }
-    console.log('[ClipboardService] 剪贴板监听已停止');
+    console.log("[ClipboardService] 剪贴板监听已停止");
   } catch (error) {
-    console.error('[ClipboardService] 停止剪贴板监听失败:', error);
+    console.error("[ClipboardService] 停止剪贴板监听失败:", error);
   }
 };
 
@@ -154,8 +157,8 @@ onMounted(async () => {
 
   // 加载静默启动状态
   try {
-    store = await Store.load('settings.json');
-    const silentStart = await store.get('silent_start');
+    store = await Store.load("settings.json");
+    const silentStart = await store.get("silent_start");
     silentStartEnabled.value = silentStart === true;
   } catch (error) {
     console.error("加载静默启动状态失败:", error);
@@ -172,7 +175,7 @@ onMounted(async () => {
   // 恢复侧边栏收起状态
   const savedCollapsed = localStorage.getItem(COLLAPSED_KEY);
   if (savedCollapsed !== null) {
-    collapsed.value = savedCollapsed === 'true';
+    collapsed.value = savedCollapsed === "true";
   }
 
   // 启动全局剪贴板监听服务
@@ -208,7 +211,7 @@ onUnmounted(() => {
             <span class="version">v1.0.0</span>
           </div>
         </div>
-        
+
         <div class="menu-container">
           <a-menu
             :selectedKeys="[activeMenu]"
@@ -232,24 +235,24 @@ onUnmounted(() => {
               <span class="menu-icon-wrapper">🪪</span>
               <span class="menu-text">证件生成</span>
             </a-menu-item>
+            <a-menu-item key="scraper">
+              <span class="menu-icon-wrapper">🕷️</span>
+              <span class="menu-text">爬虫生成器</span>
+            </a-menu-item>
             <a-menu-item key="iframe">
               <span class="menu-icon-wrapper">🌐</span>
               <span class="menu-text">更多工具</span>
             </a-menu-item>
-           <a-menu-item key="recorder">
+            <a-menu-item key="recorder">
               <span class="menu-icon-wrapper">⏺️</span>
               <span class="menu-text">动作回放</span>
             </a-menu-item>
-            <!-- <a-menu-item key="scraper">
-              <span class="menu-icon-wrapper">🕷️</span>
-              <span class="menu-text">网页爬虫</span>
-            </a-menu-item> -->
           </a-menu>
         </div>
 
         <div class="sider-footer">
           <div class="collapse-trigger" @click="collapsed = !collapsed">
-            <span class="collapse-icon">{{ collapsed ? '→' : '←' }}</span>
+            <span class="collapse-icon">{{ collapsed ? "→" : "←" }}</span>
             <span v-if="!collapsed" class="collapse-text">收起</span>
           </div>
 
@@ -263,32 +266,32 @@ onUnmounted(() => {
           </div>
           -->
 
-           <div class="autostart-card">
-             <div class="autostart-info">
-               <span class="autostart-title">开机自启</span>
-               <span class="autostart-desc">开机后自动打开本程序</span>
-             </div>
-             <a-switch
-               v-model:checked="autostartEnabled"
-               :loading="autostartLoading"
-               @change="toggleAutostart"
-               class="custom-switch"
-             />
-           </div>
+          <div class="autostart-card">
+            <div class="autostart-info">
+              <span class="autostart-title">开机自启</span>
+              <span class="autostart-desc">开机后自动打开本程序</span>
+            </div>
+            <a-switch
+              v-model:checked="autostartEnabled"
+              :loading="autostartLoading"
+              @change="toggleAutostart"
+              class="custom-switch"
+            />
+          </div>
 
-           <div class="autostart-card">
-             <div class="autostart-info">
-               <span class="autostart-title">静默启动</span>
-               <span class="autostart-desc">启动时不显示窗口</span>
-               <span class="autostart-desc">可配合开机自启</span>
-             </div>
-             <a-switch
-               v-model:checked="silentStartEnabled"
-               :loading="silentStartLoading"
-               @change="toggleSilentStart"
-               class="custom-switch"
-             />
-           </div>
+          <div class="autostart-card">
+            <div class="autostart-info">
+              <span class="autostart-title">静默启动</span>
+              <span class="autostart-desc">启动时不显示窗口</span>
+              <span class="autostart-desc">可配合开机自启</span>
+            </div>
+            <a-switch
+              v-model:checked="silentStartEnabled"
+              :loading="silentStartLoading"
+              @change="toggleSilentStart"
+              class="custom-switch"
+            />
+          </div>
         </div>
       </a-layout-sider>
 
@@ -343,7 +346,7 @@ onUnmounted(() => {
 .logo-box {
   width: 40px;
   height: 40px;
-  background: linear-gradient(135deg, #FF9A9E 0%, #FECFEF 100%);
+  background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);
   border-radius: 12px;
   display: flex;
   align-items: center;
@@ -378,7 +381,7 @@ onUnmounted(() => {
   font-size: 10px;
   color: var(--text-tertiary);
   font-weight: 500;
-  background: rgba(0,0,0,0.04);
+  background: rgba(0, 0, 0, 0.04);
   padding: 1px 5px;
   border-radius: 4px;
   align-self: flex-start;
@@ -443,7 +446,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  border-top: 1px solid rgba(0,0,0,0.03);
+  border-top: 1px solid rgba(0, 0, 0, 0.03);
 }
 
 .collapse-trigger {
@@ -512,7 +515,7 @@ onUnmounted(() => {
 }
 
 .custom-switch {
-  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
 }
 
 :deep(.ant-switch-checked) {

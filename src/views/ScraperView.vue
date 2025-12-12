@@ -1,516 +1,606 @@
 <template>
-  <div class="scraper-view">
-    <div class="page-header">
-      <div class="header-content">
-        <h1>
-          <GlobalOutlined class="header-icon" />
-          爬虫代码生成器
-        </h1>
-        <p class="header-desc">可视化配置爬虫规则，一键生成 Node.js / Python 爬虫代码</p>
+  <div class="scraper-container">
+    <!-- Top Bar -->
+    <div class="top-bar">
+      <div class="url-input-group">
+        <a-input-group compact style="display: flex">
+          <a-select v-model:value="requestMethod" style="width: 100px">
+            <a-select-option value="GET">GET</a-select-option>
+          </a-select>
+          <a-input
+            v-model:value="targetUrl"
+            placeholder="输入目标网址 (https://...)"
+            style="flex: 1"
+            @pressEnter="fetchPage"
+          />
+          <a-button type="primary" :loading="loading" @click="fetchPage">
+            <template #icon><GlobalOutlined /></template>
+            加载网页
+          </a-button>
+        </a-input-group>
       </div>
-      <div class="header-actions">
-        <a-button type="primary" size="large" @click="generateCode">
-          <template #icon><CodeOutlined /></template>
-          生成代码
-        </a-button>
+      <div class="actions">
+        <a-space>
+          <a-tooltip title="开启/关闭 元素选择模式">
+            <a-button
+              :type="isInspectorActive ? 'primary' : 'default'"
+              @click="toggleInspector"
+              shape="circle"
+            >
+              <template #icon><AimOutlined /></template>
+            </a-button>
+          </a-tooltip>
+          <a-button type="primary" ghost @click="showCodeModal">
+            <template #icon><CodeOutlined /></template>
+            生成代码
+          </a-button>
+        </a-space>
       </div>
     </div>
 
-    <div class="main-content">
-      <!-- 左侧配置区 -->
-      <div class="config-panel">
-        <a-card :bordered="false" class="config-card">
-          <a-tabs v-model:activeKey="activeTab">
-            <a-tab-pane key="basic" tab="基础设置">
-              <a-form layout="vertical" :model="config">
-                <a-row :gutter="16">
-                  <a-col :span="12">
-                    <a-form-item label="生成语言">
-                      <a-select v-model:value="config.language">
-                        <a-select-option value="node">Node.js (Cheerio)</a-select-option>
-                        <a-select-option value="python">Python (BeautifulSoup)</a-select-option>
-                      </a-select>
-                    </a-form-item>
-                  </a-col>
-                  <a-col :span="12">
-                    <a-form-item label="爬取模式">
-                      <a-select v-model:value="config.type">
-                        <a-select-option value="single">单页提取</a-select-option>
-                        <a-select-option value="list">列表+详情</a-select-option>
-                      </a-select>
-                    </a-form-item>
-                  </a-col>
-                </a-row>
+    <!-- Main Content -->
+    <div class="main-body">
+      <!-- Left: Browser Preview -->
+      <div class="browser-pane">
+        <div class="browser-header">
+          <span>页面预览</span>
+          <span v-if="isInspectorActive" class="inspector-badge">
+            <AimOutlined /> 选择模式中... (点击页面元素自动提取)
+          </span>
+        </div>
+        <div class="browser-viewport" ref="browserContainer">
+          <iframe
+            ref="previewFrame"
+            class="preview-iframe"
+            sandbox="allow-same-origin allow-scripts"
+            :srcdoc="processedHtml"
+          ></iframe>
+          <div v-if="!processedHtml" class="empty-browser">
+            <GlobalOutlined style="font-size: 48px; color: #d9d9d9; margin-bottom: 16px" />
+            <p>输入网址并点击加载以开始可视化配置</p>
+          </div>
+          <div v-if="loading" class="loading-overlay">
+            <a-spin tip="正在加载页面..." />
+          </div>
+        </div>
+      </div>
 
-                <a-form-item :label="config.type === 'list' ? '列表页 URL' : '目标 URL'">
-                  <a-input v-model:value="config.url" placeholder="https://example.com/target" allow-clear />
-                </a-form-item>
-
-                <template v-if="config.type === 'list'">
-                  <a-form-item label="列表项选择器" help="用于定位列表中的每一个项目，如: .product-item">
-                    <a-input v-model:value="config.listSelector" placeholder=".list-item" />
-                  </a-form-item>
-                  <a-form-item label="详情链接选择器" help="相对于列表项的链接选择器，如: a.title">
-                    <a-input v-model:value="config.linkSelector" placeholder="a" />
-                  </a-form-item>
-                </template>
-              </a-form>
-            </a-tab-pane>
-
-            <a-tab-pane key="fields" tab="字段提取">
-              <div class="fields-container">
-                <div v-for="(field, index) in config.fields" :key="index" class="field-item">
-                  <div class="field-header">
-                    <span class="field-index">#{{ index + 1 }}</span>
-                    <DeleteOutlined class="delete-btn" @click="removeField(index)" v-if="config.fields.length > 1" />
+      <!-- Right: Configuration -->
+      <div class="config-pane">
+        <a-tabs v-model:activeKey="activeTab" class="config-tabs">
+          <!-- Fields Tab -->
+          <a-tab-pane key="fields" tab="提取规则">
+            <div class="fields-list">
+              <div v-for="(field, index) in fields" :key="index" class="field-card" :class="{ active: currentFieldIndex === index }">
+                <div class="field-header" @click="currentFieldIndex = index">
+                  <span class="field-badge">#{{ index + 1 }}</span>
+                  <a-input v-model:value="field.name" placeholder="字段名称" size="small" style="width: 120px" :bordered="false" />
+                  <div class="field-actions">
+                    <a-tooltip title="删除">
+                      <a-button type="text" danger size="small" @click.stop="removeField(index)">
+                        <template #icon><DeleteOutlined /></template>
+                      </a-button>
+                    </a-tooltip>
                   </div>
-                  <a-row :gutter="12">
-                    <a-col :span="8">
-                      <a-input v-model:value="field.name" placeholder="字段名 (如: title)" />
-                    </a-col>
-                    <a-col :span="16">
-                      <a-input v-model:value="field.selector" placeholder="CSS选择器 (如: .title h1)" />
-                    </a-col>
-                  </a-row>
-                  <a-row :gutter="12" style="margin-top: 8px">
-                    <a-col :span="12">
-                      <a-select v-model:value="field.attr" style="width: 100%">
-                        <a-select-option value="text">获取文本 (Text)</a-select-option>
-                        <a-select-option value="html">获取HTML</a-select-option>
-                        <a-select-option value="href">链接 (href)</a-select-option>
-                        <a-select-option value="src">图片/资源 (src)</a-select-option>
-                        <a-select-option value="custom">自定义属性</a-select-option>
-                      </a-select>
-                    </a-col>
-                    <a-col :span="12" v-if="field.attr === 'custom'">
-                      <a-input v-model:value="field.customAttr" placeholder="属性名 (如: data-id)" />
-                    </a-col>
-                  </a-row>
                 </div>
                 
-                <a-button type="dashed" block @click="addField">
-                  <PlusOutlined /> 添加提取字段
-                </a-button>
+                <div class="field-body" v-if="currentFieldIndex === index">
+                  <a-form layout="vertical" size="small">
+                    <a-form-item label="CSS选择器">
+                      <div style="display: flex; gap: 8px">
+                        <a-input v-model:value="field.selector" placeholder="点击左侧元素自动生成" />
+                        <a-button :type="isInspectorActive ? 'primary' : 'default'" size="small" @click="toggleInspector">
+                          <AimOutlined />
+                        </a-button>
+                      </div>
+                    </a-form-item>
+                    <a-row :gutter="8">
+                      <a-col :span="12">
+                        <a-form-item label="提取属性">
+                          <a-select v-model:value="field.attr" style="width: 100%">
+                            <a-select-option value="text">文本 (Text)</a-select-option>
+                            <a-select-option value="html">HTML</a-select-option>
+                            <a-select-option value="href">链接 (href)</a-select-option>
+                            <a-select-option value="src">资源 (src)</a-select-option>
+                            <a-select-option value="custom">自定义</a-select-option>
+                          </a-select>
+                        </a-form-item>
+                      </a-col>
+                      <a-col :span="12" v-if="field.attr === 'custom'">
+                        <a-form-item label="属性名">
+                          <a-input v-model:value="field.customAttr" placeholder="e.g. data-id" />
+                        </a-form-item>
+                      </a-col>
+                    </a-row>
+                  </a-form>
+                </div>
               </div>
-            </a-tab-pane>
 
-            <a-tab-pane key="advanced" tab="高级选项">
-              <a-form layout="vertical">
-                 <a-form-item label="User-Agent">
-                   <a-input v-model:value="config.userAgent" placeholder="Mozilla/5.0..." />
-                 </a-form-item>
-                 <a-row :gutter="16">
-                   <a-col :span="12">
-                     <a-form-item label="超时时间 (ms)">
-                       <a-input-number v-model:value="config.timeout" style="width: 100%" />
-                     </a-form-item>
-                   </a-col>
-                   <a-col :span="12">
-                     <a-form-item label="并发数 (列表模式)">
-                       <a-input-number v-model:value="config.concurrency" :min="1" :max="10" style="width: 100%" />
-                     </a-form-item>
-                   </a-col>
-                 </a-row>
-                 <a-form-item label="导出格式">
-                    <a-radio-group v-model:value="config.format" button-style="solid">
-                      <a-radio-button value="json">JSON</a-radio-button>
-                      <a-radio-button value="csv">CSV</a-radio-button>
-                    </a-radio-group>
-                 </a-form-item>
-              </a-form>
-            </a-tab-pane>
-          </a-tabs>
-        </a-card>
-      </div>
+              <a-button type="dashed" block @click="addField" style="margin-top: 12px">
+                <PlusOutlined /> 添加字段
+              </a-button>
+            </div>
+          </a-tab-pane>
 
-      <!-- 右侧代码预览区 -->
-      <div class="code-panel">
-        <a-card :bordered="false" class="code-card" :bodyStyle="{ padding: 0, height: '100%', display: 'flex', flexDirection: 'column' }">
-          <div class="code-toolbar">
-            <span class="code-label">生成结果</span>
-            <div class="code-actions">
-              <a-tag v-if="generatedCode" color="blue">{{ config.language === 'node' ? 'Node.js' : 'Python' }}</a-tag>
-              <a-tooltip title="复制">
-                <a-button type="text" size="small" @click="copyCode" :disabled="!generatedCode">
-                  <CopyOutlined />
-                </a-button>
-              </a-tooltip>
-              <a-tooltip title="下载">
-                <a-button type="text" size="small" @click="downloadCode" :disabled="!generatedCode">
-                  <DownloadOutlined />
-                </a-button>
-              </a-tooltip>
+          <!-- Data Preview Tab -->
+          <a-tab-pane key="data" tab="数据预览">
+            <div class="data-preview">
+              <div class="preview-toolbar">
+                <a-radio-group v-model:value="listMode" size="small" button-style="solid">
+                  <a-radio-button :value="false">单条</a-radio-button>
+                  <a-radio-button :value="true">列表</a-radio-button>
+                </a-radio-group>
+                <a-button type="link" size="small" @click="refreshPreview">刷新预览</a-button>
+              </div>
+              
+              <div v-if="listMode" class="list-config">
+                 <a-form layout="vertical" size="small">
+                    <a-form-item label="列表容器选择器 (循环项)">
+                       <div style="display: flex; gap: 8px">
+                        <a-input v-model:value="listSelector" placeholder="例如: .product-item" />
+                         <a-button size="small" @click="detectListSelector">
+                          <MagicIcon /> 智能检测
+                        </a-button>
+                       </div>
+                    </a-form-item>
+                 </a-form>
+              </div>
+
+              <div class="preview-json">
+                <pre>{{ previewDataJson }}</pre>
+              </div>
             </div>
-          </div>
-          <div class="code-editor">
-            <pre v-if="generatedCode"><code>{{ generatedCode }}</code></pre>
-            <div v-else class="empty-state">
-              <CodeOutlined style="font-size: 48px; color: #e0e0e0; margin-bottom: 16px" />
-              <p>配置参数并点击“生成代码”</p>
-            </div>
-          </div>
-        </a-card>
+          </a-tab-pane>
+        </a-tabs>
       </div>
     </div>
+
+    <!-- Code Generation Modal -->
+    <a-modal
+      v-model:open="codeModalVisible"
+      title="生成爬虫代码"
+      width="800px"
+      :footer="null"
+    >
+      <div class="code-modal-content">
+        <div class="code-options">
+          <a-radio-group v-model:value="codeLanguage" button-style="solid">
+            <a-radio-button value="node">Node.js (Cheerio)</a-radio-button>
+            <a-radio-button value="python">Python (BeautifulSoup)</a-radio-button>
+          </a-radio-group>
+          <a-space>
+             <a-button @click="copyCode"><CopyOutlined /> 复制</a-button>
+             <a-button type="primary" @click="downloadCode"><DownloadOutlined /> 下载</a-button>
+          </a-space>
+        </div>
+        <div class="code-editor-preview">
+          <pre><code>{{ generatedCode }}</code></pre>
+        </div>
+      </div>
+    </a-modal>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue';
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue';
 import { message } from 'ant-design-vue';
 import { 
   GlobalOutlined, 
+  AimOutlined, 
   CodeOutlined, 
-  CopyOutlined, 
-  DownloadOutlined, 
   PlusOutlined, 
-  DeleteOutlined 
+  DeleteOutlined,
+  CopyOutlined,
+  DownloadOutlined
 } from '@ant-design/icons-vue';
+import { fetch } from '@tauri-apps/plugin-http';
 
-const activeTab = ref('basic');
+// --- State ---
+const targetUrl = ref('');
+const requestMethod = ref('GET');
+const loading = ref(false);
+const processedHtml = ref('');
+const previewFrame = ref(null);
+const isInspectorActive = ref(false);
+const activeTab = ref('fields');
 
-const config = reactive({
-  language: 'node',
-  type: 'single',
-  url: '',
-  listSelector: '',
-  linkSelector: '',
-  userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-  timeout: 5000,
-  concurrency: 3,
-  format: 'json',
-  fields: [
-    { name: 'title', selector: 'h1', attr: 'text', customAttr: '' },
-    { name: 'content', selector: '.content', attr: 'text', customAttr: '' }
-  ]
-});
+const fields = reactive([
+  { name: 'title', selector: 'h1', attr: 'text', customAttr: '' }
+]);
+const currentFieldIndex = ref(0);
 
-const generatedCode = ref('');
+const listMode = ref(false);
+const listSelector = ref('');
 
-const addField = () => {
-  config.fields.push({ name: '', selector: '', attr: 'text', customAttr: '' });
-};
+const codeModalVisible = ref(false);
+const codeLanguage = ref('node');
 
-const removeField = (index) => {
-  config.fields.splice(index, 1);
-};
+// --- Helper Components ---
+// MagicIcon for smart detect (just using a placeholder icon for now)
+const MagicIcon = AimOutlined; 
 
-const generateCode = () => {
-  if (!config.url) {
-    message.warning('请输入目标 URL');
-    return;
-  }
-  if (config.type === 'list' && (!config.listSelector || !config.linkSelector)) {
-    message.warning('列表模式下需要填写列表选择器和链接选择器');
-    activeTab.value = 'basic';
+// --- Browser & Inspector Logic ---
+
+const fetchPage = async () => {
+  if (!targetUrl.value) {
+    message.warning('请输入目标网址');
     return;
   }
   
-  const validFields = config.fields.filter(f => f.name && f.selector);
-  if (validFields.length === 0) {
-    message.warning('请至少配置一个有效的提取字段');
-    activeTab.value = 'fields';
-    return;
+  if (!targetUrl.value.startsWith('http')) {
+    targetUrl.value = 'https://' + targetUrl.value;
   }
 
-  if (config.language === 'node') {
-    generatedCode.value = generateNodeCode();
+  loading.value = true;
+  isInspectorActive.value = false;
+  
+  try {
+    const response = await fetch(targetUrl.value, {
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP Error: ${response.status}`);
+    }
+    
+    const html = await response.text();
+    processedHtml.value = injectInspectorScript(html, targetUrl.value);
+    
+    message.success('页面加载成功');
+  } catch (error) {
+    console.error(error);
+    message.error(`加载失败: ${error?.message || error || '网络请求失败'}`);
+  } finally {
+    loading.value = false;
+  }
+};
+
+// Inject script for interaction and base tag for relative links
+const injectInspectorScript = (html, baseUrl) => {
+  // Add base tag
+  const baseTag = `<base href="${baseUrl}" target="_blank">`;
+  let processed = html.replace('<head>', `<head>${baseTag}`);
+  
+  // Inject Inspector Script
+  const script = `
+    <script>
+      (function() {
+        let active = false;
+        let highlighted = null;
+        
+        window.addEventListener('message', (event) => {
+          if (event.data.type === 'toggle-inspector') {
+            active = event.data.active;
+            if (!active && highlighted) {
+              highlighted.style.outline = '';
+              highlighted = null;
+            }
+          }
+        });
+
+        document.addEventListener('mouseover', (e) => {
+          if (!active) return;
+          e.stopPropagation();
+          
+          if (highlighted) highlighted.style.outline = '';
+          e.target.style.outline = '2px solid #1890ff';
+          highlighted = e.target;
+        }, true);
+
+        document.addEventListener('mouseout', (e) => {
+          if (!active) return;
+          e.target.style.outline = '';
+        }, true);
+
+        document.addEventListener('click', (e) => {
+          if (!active) return;
+          e.preventDefault();
+          e.stopPropagation();
+          
+          const selector = generateSelector(e.target);
+          window.parent.postMessage({
+            type: 'element-selected',
+            selector: selector,
+            tagName: e.target.tagName,
+            text: e.target.innerText.slice(0, 50)
+          }, '*');
+        }, true);
+
+        // Simple selector generator
+        function generateSelector(el) {
+          if (el.tagName.toLowerCase() === 'html') return 'html';
+          if (el.tagName.toLowerCase() === 'body') return 'body';
+          if (el.id) return '#' + el.id;
+          
+          const path = [];
+          while (el.nodeType === Node.ELEMENT_NODE) {
+            let selector = el.nodeName.toLowerCase();
+            if (el.id) {
+              selector += '#' + el.id;
+              path.unshift(selector);
+              break;
+            } else {
+              let sib = el, nth = 1;
+              while (sib = sib.previousElementSibling) {
+                if (sib.nodeName.toLowerCase() == selector)
+                  nth++;
+              }
+              if (nth != 1)
+                selector += ":nth-of-type("+nth+")";
+            }
+            path.unshift(selector);
+            el = el.parentNode;
+            if (el.tagName.toLowerCase() === 'body') break;
+          }
+          return path.join(" > ");
+        }
+      })();
+    <\/script>
+    <style>
+      /* Prevent pointer events on iframes/objects to allow selection over them */
+      iframe, object, embed { pointer-events: none; }
+    </style>
+  `;
+  
+  return processed + script;
+};
+
+const toggleInspector = () => {
+  if (!processedHtml.value) return;
+  isInspectorActive.value = !isInspectorActive.value;
+  
+  // Send message to iframe
+  if (previewFrame.value && previewFrame.value.contentWindow) {
+    previewFrame.value.contentWindow.postMessage({
+      type: 'toggle-inspector',
+      active: isInspectorActive.value
+    }, '*');
+  }
+};
+
+// Handle messages from iframe
+const handleMessage = (event) => {
+  if (event.data.type === 'element-selected') {
+    if (currentFieldIndex.value !== -1 && fields[currentFieldIndex.value]) {
+      fields[currentFieldIndex.value].selector = event.data.selector;
+      message.success(`已选择: ${event.data.tagName}`);
+      // Refresh preview automatically
+      refreshPreview();
+    }
+  }
+};
+
+onMounted(() => {
+  window.addEventListener('message', handleMessage);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('message', handleMessage);
+});
+
+// --- Field Management ---
+const addField = () => {
+  fields.push({ name: '', selector: '', attr: 'text', customAttr: '' });
+  currentFieldIndex.value = fields.length - 1;
+};
+
+const removeField = (index) => {
+  fields.splice(index, 1);
+  if (currentFieldIndex.value >= fields.length) {
+    currentFieldIndex.value = Math.max(0, fields.length - 1);
+  }
+};
+
+// --- Preview Logic ---
+const previewResult = ref([]);
+
+const refreshPreview = () => {
+  if (!processedHtml.value) return;
+  
+  // Create a temporary DOM parser
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(processedHtml.value, 'text/html');
+  
+  if (listMode.value && listSelector.value) {
+    // List Mode
+    const items = doc.querySelectorAll(listSelector.value);
+    const results = [];
+    items.forEach(item => {
+      const row = {};
+      fields.forEach(field => {
+        if (field.name && field.selector) {
+          const el = item.querySelector(field.selector);
+          row[field.name] = extractValue(el, field);
+        }
+      });
+      results.push(row);
+    });
+    previewResult.value = results;
   } else {
-    generatedCode.value = generatePythonCode();
+    // Single Mode
+    const row = {};
+    fields.forEach(field => {
+      if (field.name && field.selector) {
+        const el = doc.querySelector(field.selector);
+        row[field.name] = extractValue(el, field);
+      }
+    });
+    previewResult.value = row;
   }
-  message.success('代码已生成');
 };
 
-const getFieldExtractionCodeNode = (field, $var = '$') => {
-  let method = '';
+const extractValue = (el, field) => {
+  if (!el) return null;
   switch (field.attr) {
-    case 'text': method = '.text().trim()'; break;
-    case 'html': method = '.html()'; break;
-    case 'href': method = '.attr("href")'; break;
-    case 'src': method = '.attr("src")'; break;
-    case 'custom': method = `.attr("${field.customAttr}")`; break;
-    default: method = '.text().trim()';
+    case 'text': return el.textContent.trim();
+    case 'html': return el.innerHTML;
+    case 'href': return el.getAttribute('href');
+    case 'src': return el.getAttribute('src');
+    case 'custom': return el.getAttribute(field.customAttr);
+    default: return el.textContent.trim();
   }
-  return `${$var}('${field.selector}')${method}`;
 };
 
-const getFieldExtractionCodePython = (field, soupVar = 'soup') => {
-  const sel = field.selector.replace(/'/g, "\\'");
-  let code = '';
-  switch (field.attr) {
-    case 'text': code = `.select_one('${sel}').get_text(strip=True)`; break;
-    case 'html': code = `.select_one('${sel}').decode_contents()`; break;
-    case 'href': code = `.select_one('${sel}')['href']`; break;
-    case 'src': code = `.select_one('${sel}')['src']`; break;
-    case 'custom': code = `.select_one('${sel}')['${field.customAttr}']`; break;
-    default: code = `.select_one('${sel}').get_text(strip=True)`;
+const previewDataJson = computed(() => {
+  return JSON.stringify(previewResult.value, null, 2);
+});
+
+const detectListSelector = () => {
+  // Simple heuristic: find container with most children of same tag
+  message.info('智能检测暂未实现，请手动输入');
+};
+
+watch([fields, listMode, listSelector], () => {
+  // Debounce refresh could go here
+  refreshPreview();
+}, { deep: true });
+
+
+// --- Code Generation ---
+
+const generatedCode = computed(() => {
+  if (codeLanguage.value === 'node') {
+    return generateNodeCode();
+  } else {
+    return generatePythonCode();
   }
-  // Add safety check
-  return `${soupVar}.select_one('${sel}') and ${soupVar}${code} or ''`;
+});
+
+const showCodeModal = () => {
+  codeModalVisible.value = true;
 };
 
 const generateNodeCode = () => {
-  const fieldsCode = config.fields
+  const fieldsConfig = fields
     .filter(f => f.name && f.selector)
-    .map(f => `      ${f.name}: ${getFieldExtractionCodeNode(f, config.type === 'single' ? '$' : 'detail$')}`)
-    .join(',\n');
-
-  const baseCode = `const axios = require('axios');
-const cheerio = require('cheerio');
-const fs = require('fs');
-
-const config = {
-  headers: {
-    'User-Agent': '${config.userAgent}'
-  },
-  timeout: ${config.timeout}
-};
-
-const axiosInstance = axios.create(config);
-`;
-
-  if (config.type === 'single') {
-    return `${baseCode}
-async function scrape() {
-  try {
-    console.log('Fetching: ${config.url}');
-    const { data } = await axiosInstance.get('${config.url}');
-    const $ = cheerio.load(data);
-
-    const result = {
-${fieldsCode}
-    };
-
-    console.log('Result:', result);
-    saveResult(result);
-
-  } catch (error) {
-    console.error('Error:', error.message);
-  }
-}
-
-function saveResult(data) {
-  const output = ${config.format === 'json' ? 'JSON.stringify(data, null, 2)' : 'convertToCSV([data])'};
-  fs.writeFileSync('output.${config.format}', output);
-  console.log('Saved to output.${config.format}');
-}
-
-${config.format === 'csv' ? `
-function convertToCSV(arr) {
-  if (!arr.length) return '';
-  const headers = Object.keys(arr[0]).join(',');
-  const rows = arr.map(obj => Object.values(obj).map(v => \`"\${String(v).replace(/"/g, '""')}"\`).join(','));
-  return headers + '\\n' + rows.join('\\n');
-}
-` : ''}
-scrape();
-`;
-  } else {
-    // List mode
-    return `${baseCode}
-async function scrapeList() {
-  try {
-    console.log('Fetching list: ${config.url}');
-    const { data } = await axiosInstance.get('${config.url}');
-    const $ = cheerio.load(data);
-    
-    const links = [];
-    $('${config.listSelector}').each((i, el) => {
-      const link = $(el).find('${config.linkSelector}').attr('href');
-      if (link) {
-        // Handle relative URLs
-        const absoluteUrl = link.startsWith('http') ? link : new URL(link, '${config.url}').href;
-        links.push(absoluteUrl);
+    .map(f => {
+      let extract = '';
+      switch(f.attr) {
+        case 'text': extract = '.text().trim()'; break;
+        case 'html': extract = '.html()'; break;
+        case 'href': extract = '.attr("href")'; break;
+        case 'src': extract = '.attr("src")'; break;
+        case 'custom': extract = `.attr("${f.customAttr}")`; break;
+        default: extract = '.text().trim()';
       }
+      return { name: f.name, selector: f.selector, extract };
     });
 
-    console.log(\`Found \${links.length} items. Starting details scrape with concurrency ${config.concurrency}...\`);
-    
-    const results = [];
-    const chunks = [];
-    for (let i = 0; i < links.length; i += ${config.concurrency}) {
-      chunks.push(links.slice(i, i + ${config.concurrency}));
-    }
+  if (listMode.value) {
+    return `const axios = require('axios');
+const cheerio = require('cheerio');
 
-    for (const chunk of chunks) {
-      const chunkResults = await Promise.all(chunk.map(url => scrapeDetail(url)));
-      results.push(...chunkResults.filter(r => r));
-      console.log(\`Progress: \${results.length}/\${links.length}\`);
-      await new Promise(r => setTimeout(r, 1000)); // Rate limiting
-    }
+async function scrape() {
+  const url = '${targetUrl.value}';
+  const { data } = await axios.get(url);
+  const $ = cheerio.load(data);
+  const results = [];
 
-    saveResult(results);
+  $('${listSelector.value}').each((i, el) => {
+    const item = $(el);
+    results.push({
+${fieldsConfig.map(f => `      ${f.name}: item.find('${f.selector}')${f.extract}`).join(',\n')}
+    });
+  });
 
-  } catch (error) {
-    console.error('List Error:', error.message);
-  }
+  console.log(JSON.stringify(results, null, 2));
 }
 
-async function scrapeDetail(url) {
-  try {
-    const { data } = await axiosInstance.get(url);
-    const detail$ = cheerio.load(data);
-    
-    return {
-      url,
-${fieldsCode}
-    };
-  } catch (e) {
-    console.error(\`Failed \${url}: \${e.message}\`);
-    return null;
-  }
+scrape();`;
+  } else {
+    return `const axios = require('axios');
+const cheerio = require('cheerio');
+
+async function scrape() {
+  const url = '${targetUrl.value}';
+  const { data } = await axios.get(url);
+  const $ = cheerio.load(data);
+
+  const result = {
+${fieldsConfig.map(f => `    ${f.name}: $('${f.selector}')${f.extract}`).join(',\n')}
+  };
+
+  console.log(JSON.stringify(result, null, 2));
 }
 
-function saveResult(data) {
-  const output = ${config.format === 'json' ? 'JSON.stringify(data, null, 2)' : 'convertToCSV(data)'};
-  fs.writeFileSync('output.${config.format}', output);
-  console.log('Saved to output.${config.format}');
-}
-
-${config.format === 'csv' ? `
-function convertToCSV(arr) {
-  if (!arr.length) return '';
-  const headers = Object.keys(arr[0]).join(',');
-  const rows = arr.map(obj => Object.values(obj).map(v => \`"\${String(v).replace(/"/g, '""')}"\`).join(','));
-  return headers + '\\n' + rows.join('\\n');
-}
-` : ''}
-scrapeList();
-`;
+scrape();`;
   }
 };
 
 const generatePythonCode = () => {
-  const fieldsCode = config.fields
+    const fieldsConfig = fields
     .filter(f => f.name && f.selector)
-    .map(f => `        '${f.name}': ${getFieldExtractionCodePython(f)}`)
-    .join(',\n');
+    .map(f => {
+      let extract = '';
+      switch(f.attr) {
+        case 'text': extract = '.get_text(strip=True)'; break;
+        case 'html': extract = '.decode_contents()'; break;
+        case 'href': extract = '.get("href")'; break;
+        case 'src': extract = '.get("src")'; break;
+        case 'custom': extract = `.get("${f.customAttr}")`; break;
+        default: extract = '.get_text(strip=True)';
+      }
+      return { name: f.name, selector: f.selector, extract };
+    });
 
-  const baseCode = `import requests
+  if (listMode.value) {
+    return `import requests
 from bs4 import BeautifulSoup
 import json
-import time
-import csv
-from urllib.parse import urljoin
 
-headers = {
-    'User-Agent': '${config.userAgent}'
-}
-timeout = ${config.timeout / 1000}
-`;
-
-  if (config.type === 'single') {
-    return `${baseCode}
 def scrape():
-    url = '${config.url}'
-    try:
-        print(f"Fetching {url}...")
-        resp = requests.get(url, headers=headers, timeout=timeout)
-        resp.raise_for_status()
-        
-        soup = BeautifulSoup(resp.text, 'html.parser')
-        
-        result = {
-${fieldsCode}
-        }
-        
-        print("Result:", result)
-        save_result([result])
-        
-    except Exception as e:
-        print(f"Error: {e}")
+    url = '${targetUrl.value}'
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    response = requests.get(url, headers=headers)
+    soup = BeautifulSoup(response.text, 'html.parser')
+    
+    results = []
+    for item in soup.select('${listSelector.value}'):
+        data = {}
+${fieldsConfig.map(f => `        el = item.select_one('${f.selector}')
+        data['${f.name}'] = el${f.extract} if el else None`).join('\n')}
+        results.append(data)
 
-def save_result(data):
-    ${config.format === 'json' ? `
-    with open('output.json', 'w', encoding='utf-8') as f:
-        json.dump(data[0], f, indent=2, ensure_ascii=False)
-    ` : `
-    keys = data[0].keys()
-    with open('output.csv', 'w', newline='', encoding='utf-8') as f:
-        writer = csv.DictWriter(f, fieldnames=keys)
-        writer.writeheader()
-        writer.writerows(data)
-    `}
-    print("Saved to output.${config.format}")
+    print(json.dumps(results, indent=2, ensure_ascii=False))
 
 if __name__ == "__main__":
-    scrape()
-`;
+    scrape()`;
   } else {
-    return `${baseCode}
-def scrape_list():
-    list_url = '${config.url}'
-    try:
-        print(f"Fetching list {list_url}...")
-        resp = requests.get(list_url, headers=headers, timeout=timeout)
-        soup = BeautifulSoup(resp.text, 'html.parser')
-        
-        links = []
-        for item in soup.select('${config.listSelector}'):
-            link_el = item.select_one('${config.linkSelector}')
-            if link_el and link_el.get('href'):
-                full_url = urljoin(list_url, link_el['href'])
-                links.append(full_url)
-                
-        print(f"Found {len(links)} items.")
-        
-        results = []
-        for i, link in enumerate(links):
-            detail = scrape_detail(link)
-            if detail:
-                results.append(detail)
-            print(f"Progress: {i+1}/{len(links)}")
-            time.sleep(1) # Rate limiting
-            
-        save_result(results)
-        
-    except Exception as e:
-        print(f"List Error: {e}")
+    return `import requests
+from bs4 import BeautifulSoup
+import json
 
-def scrape_detail(url):
-    try:
-        resp = requests.get(url, headers=headers, timeout=timeout)
-        soup = BeautifulSoup(resp.text, 'html.parser')
-        
-        return {
-            'url': url,
-${fieldsCode}
-        }
-    except Exception as e:
-        print(f"Detail Error {url}: {e}")
-        return None
+def scrape():
+    url = '${targetUrl.value}'
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    response = requests.get(url, headers=headers)
+    soup = BeautifulSoup(response.text, 'html.parser')
+    
+    data = {}
+${fieldsConfig.map(f => `    el = soup.select_one('${f.selector}')
+    data['${f.name}'] = el${f.extract} if el else None`).join('\n')}
 
-def save_result(data):
-    if not data: return
-    ${config.format === 'json' ? `
-    with open('output.json', 'w', encoding='utf-8') as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-    ` : `
-    keys = data[0].keys()
-    with open('output.csv', 'w', newline='', encoding='utf-8') as f:
-        writer = csv.DictWriter(f, fieldnames=keys)
-        writer.writeheader()
-        writer.writerows(data)
-    `}
-    print("Saved to output.${config.format}")
+    print(json.dumps(data, indent=2, ensure_ascii=False))
 
 if __name__ == "__main__":
-    scrape_list()
-`;
+    scrape()`;
   }
 };
 
 const copyCode = async () => {
   try {
     await navigator.clipboard.writeText(generatedCode.value);
-    message.success('已复制到剪贴板');
-  } catch (error) {
+    message.success('复制成功');
+  } catch (e) {
     message.error('复制失败');
   }
 };
 
 const downloadCode = () => {
-  const ext = config.language === 'node' ? 'js' : 'py';
+  const ext = codeLanguage.value === 'node' ? 'js' : 'py';
   const blob = new Blob([generatedCode.value], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -519,174 +609,238 @@ const downloadCode = () => {
   a.click();
   URL.revokeObjectURL(url);
 };
+
 </script>
 
 <style scoped>
-.scraper-view {
+.scraper-container {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background-color: #f0f2f5;
-}
-
-.page-header {
-  padding: 16px 24px;
-  background: #fff;
-  border-bottom: 1px solid #f0f0f0;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.header-content h1 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.header-icon {
-  color: #1890ff;
-  font-size: 24px;
-}
-
-.header-desc {
-  margin: 4px 0 0 36px;
-  color: #8c8c8c;
-  font-size: 13px;
-}
-
-.main-content {
-  flex: 1;
-  display: flex;
-  padding: 16px;
-  gap: 16px;
+  background-color: #f5f5f5;
   overflow: hidden;
 }
 
-.config-panel {
-  width: 450px;
-  display: flex;
-  flex-direction: column;
-}
-
-.config-card {
-  flex: 1;
-  overflow-y: auto;
-  border-radius: 8px;
-}
-
-.code-panel {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.code-card {
-  flex: 1;
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.code-toolbar {
-  padding: 8px 16px;
-  border-bottom: 1px solid #f0f0f0;
+/* Top Bar */
+.top-bar {
+  background: white;
+  padding: 12px 24px;
+  border-bottom: 1px solid #e8e8e8;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: #fafafa;
+  gap: 20px;
 }
 
-.code-label {
-  font-weight: 600;
-  color: #595959;
-}
-
-.code-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.code-editor {
+.url-input-group {
   flex: 1;
-  background: #1e1e1e;
-  overflow: auto;
+  max-width: 800px;
+}
+
+/* Main Body */
+.main-body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* Browser Pane (Left) */
+.browser-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid #e8e8e8;
+  background: #e6e6e6;
   position: relative;
 }
 
-.code-editor pre {
-  margin: 0;
-  padding: 20px;
-  color: #d4d4d4;
-  font-family: 'Consolas', 'Monaco', monospace;
-  font-size: 14px;
-  line-height: 1.5;
+.browser-header {
+  background: #f0f0f0;
+  padding: 8px 16px;
+  font-size: 12px;
+  color: #666;
+  border-bottom: 1px solid #d9d9d9;
+  display: flex;
+  justify-content: space-between;
 }
 
-.empty-state {
+.inspector-badge {
+  color: #1890ff;
+  font-weight: bold;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.6; }
+  100% { opacity: 1; }
+}
+
+.browser-viewport {
+  flex: 1;
+  position: relative;
+  background: white;
+  margin: 16px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.preview-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: white;
+}
+
+.empty-browser {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
   height: 100%;
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  color: #bfbfbf;
+  color: #999;
+  background: #fafafa;
 }
 
-.fields-container {
+.loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(255,255,255,0.8);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 10;
+}
+
+/* Config Pane (Right) */
+.config-pane {
+  width: 400px;
+  background: white;
+  display: flex;
+  flex-direction: column;
+}
+
+.config-tabs {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+:deep(.ant-tabs-content) {
+  flex: 1;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.fields-list {
+  padding: 16px;
+}
+
+.field-card {
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+  margin-bottom: 12px;
+  background: #fafafa;
+  transition: all 0.3s;
+}
+
+.field-card.active {
+  border-color: #1890ff;
+  background: #e6f7ff;
+}
+
+.field-header {
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.field-badge {
+  background: #1890ff;
+  color: white;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 10px;
+}
+
+.field-actions {
+  margin-left: auto;
+}
+
+.field-body {
+  padding: 12px;
+  border-top: 1px solid rgba(0,0,0,0.05);
+  background: white;
+  border-radius: 0 0 6px 6px;
+}
+
+/* Data Preview */
+.data-preview {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.preview-toolbar {
+  padding: 8px 16px;
+  border-bottom: 1px solid #f0f0f0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.list-config {
+    padding: 12px 16px;
+    background: #fafafa;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.preview-json {
+  flex: 1;
+  overflow: auto;
+  padding: 16px;
+  background: #282c34;
+  color: #abb2bf;
+  font-family: 'Consolas', monospace;
+  font-size: 12px;
+  margin: 0;
+}
+
+.preview-json pre {
+    margin: 0;
+}
+
+/* Code Modal */
+.code-modal-content {
+  height: 500px;
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
 
-.field-item {
-  background: #fafafa;
-  padding: 12px;
-  border-radius: 6px;
-  border: 1px solid #f0f0f0;
-  position: relative;
-}
-
-.field-header {
+.code-options {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 8px;
+  align-items: center;
 }
 
-.field-index {
-  font-weight: 600;
-  color: #1890ff;
-  font-size: 12px;
-  background: #e6f7ff;
-  padding: 1px 8px;
-  border-radius: 10px;
-}
-
-.delete-btn {
-  color: #ff4d4f;
-  cursor: pointer;
-  font-size: 14px;
-}
-
-.delete-btn:hover {
-  color: #ff7875;
-}
-
-/* Scrollbar styling */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #d9d9d9;
-  border-radius: 3px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
+.code-editor-preview {
+  flex: 1;
+  background: #1e1e1e;
+  border-radius: 4px;
+  overflow: auto;
+  padding: 16px;
+  color: #d4d4d4;
+  font-family: 'Consolas', monospace;
 }
 </style>

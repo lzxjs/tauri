@@ -21,6 +21,14 @@
     "fs:allow-home-read-recursive",
     "fs:allow-home-write-recursive",
     "updater:default",
-    "process:default"
+    "process:default",
+    "http:default",
+    {
+      "identifier": "http:allow-fetch",
+      "allow": [
+        { "url": "http://**" },
+        { "url": "https://**" }
+      ]
+    }
   ]
 }

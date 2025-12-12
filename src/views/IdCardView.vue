@@ -322,12 +322,6 @@ const copyAll = () => {
   message.success(`已复制 ${results.value.length} 条记录`);
 };
 
-// 清空结果
-const clearResults = () => {
-  results.value = [];
-  message.info("已清空结果");
-};
-
 // 导出为TXT
 const exportToTxt = async () => {
   if (results.value.length === 0) {
@@ -1511,10 +1505,6 @@ watch(activeTab, async (val) => {
               <a-button size="small" @click="copyAll">
                 <template #icon><CopyOutlined /></template>
                 复制全部
-              </a-button>
-              <a-button size="small" danger @click="clearResults">
-                <template #icon><DeleteOutlined /></template>
-                清空
               </a-button>
             </div>
           </div>

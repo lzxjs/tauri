@@ -228,10 +228,6 @@ onUnmounted(() => {
               <span class="menu-icon-wrapper">🚀</span>
               <span class="menu-text">应用启动</span>
             </a-menu-item>
-           <a-menu-item key="recorder">
-              <span class="menu-icon-wrapper">⏺️</span>
-              <span class="menu-text">动作回放</span>
-            </a-menu-item>
             <a-menu-item key="idcard">
               <span class="menu-icon-wrapper">🪪</span>
               <span class="menu-text">证件生成</span>
@@ -239,6 +235,10 @@ onUnmounted(() => {
             <a-menu-item key="iframe">
               <span class="menu-icon-wrapper">🌐</span>
               <span class="menu-text">更多工具</span>
+            </a-menu-item>
+           <a-menu-item key="recorder">
+              <span class="menu-icon-wrapper">⏺️</span>
+              <span class="menu-text">动作回放</span>
             </a-menu-item>
             <!-- <a-menu-item key="scraper">
               <span class="menu-icon-wrapper">🕷️</span>

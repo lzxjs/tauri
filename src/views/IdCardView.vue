@@ -34,11 +34,12 @@ const permanentConfig = ref({
   birthYear: new Date().getFullYear() - 30,
   birthMonth: 1,
   birthDay: 1,
-  type: "PRC",
+  gender: "male",
+  version: "new", // 'new' | 'old'
   count: 10,
 });
 
-// 港澳台通行证配置
+// 港澳台通行证配置 (回乡证/台胞证)
 const permitConfig = ref({
   type: "HK",
   count: 10,
@@ -46,7 +47,7 @@ const permitConfig = ref({
 
 // 港澳台居住证配置
 const residenceConfig = ref({
-  region: "110000",
+  // region: "110000", // 移除，居住证前6位是固定的
   birthYear: new Date().getFullYear() - 25,
   birthMonth: 1,
   birthDay: 1,
@@ -89,7 +90,7 @@ const regions = [
   { value: "650000", label: "新疆维吾尔自治区" },
 ];
 
-// 计算校验码
+// 计算校验码 (18位身份证/居住证/新版永居证)
 const calcCheckCode = (idcard17) => {
   const weights = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2];
   const checkCodes = ["1", "0", "X", "9", "8", "7", "6", "5", "4", "3", "2"];
@@ -100,8 +101,8 @@ const calcCheckCode = (idcard17) => {
   return checkCodes[sum % 11];
 };
 
-// 计算永居证校验码（2位）
-const calcPermanentCheckCode = (permanent13) => {
+// 计算旧版永居证校验码（2位）
+const calcPermanentCheckCodeOld = (permanent13) => {
   let sum = 0;
   for (let i = 0; i < permanent13.length; i++) {
     const char = permanent13[i];
@@ -135,7 +136,7 @@ const generateIdCard = () => {
     list.push({
       id: Date.now() + i,
       number: idcard,
-      type: "身份证",
+      type: "居民身份证",
       info: `${regionName} | ${birthYear}-${String(birthMonth).padStart(
         2,
         "0"
@@ -148,63 +149,100 @@ const generateIdCard = () => {
   return list;
 };
 
-// 生成永居证（15位格式：3位国家码+4位地区码+6位日期YYMMDD+2位校验码）
+// 生成永居证
 const generatePermanent = () => {
-  const { birthYear, birthMonth, birthDay, type, count } =
+  const { birthYear, birthMonth, birthDay, version, gender, count } =
     permanentConfig.value;
   const list = [];
-  const typeMap = {
-    PRC: { name: "外国人", code: "CHN" },
-    HKM: { name: "港澳", code: "HKM" },
-    TWN: { name: "台湾", code: "TWN" },
-    GBR: { name: "英国", code: "GBR" },
-    USA: { name: "美国", code: "USA" },
-    JPN: { name: "日本", code: "JPN" },
-  };
 
   for (let i = 0; i < count; i++) {
-    const countryCode = typeMap[type]?.code || "CHN";
-    const regionCode = String(Math.floor(Math.random() * 9000) + 1000);
-    const yearShort = String(birthYear).slice(-2);
-    const dateCode = `${yearShort}${String(birthMonth).padStart(
-      2,
-      "0"
-    )}${String(birthDay).padStart(2, "0")}`;
-    const permanent13 = `${countryCode}${regionCode}${dateCode}`;
-    const checkCode = calcPermanentCheckCode(permanent13);
-    const number = permanent13 + checkCode;
+    let number = "";
+    let info = "";
 
-    const age = new Date().getFullYear() - birthYear;
+    if (version === "old") {
+      // 15位旧版: 3位国家码(CHN)+4位地区码+6位日期+2位校验码
+      const countryCode = "CHN"; // 默认用CHN，实际可能是其他
+      const regionCode = String(Math.floor(Math.random() * 9000) + 1000);
+      const yearShort = String(birthYear).slice(-2);
+      const dateCode = `${yearShort}${String(birthMonth).padStart(
+        2,
+        "0"
+      )}${String(birthDay).padStart(2, "0")}`;
+      const permanent13 = `${countryCode}${regionCode}${dateCode}`;
+      const checkCode = calcPermanentCheckCodeOld(permanent13);
+      number = permanent13 + checkCode;
+      info = `旧版(15位) | ${birthYear}年`;
+    } else {
+      // 18位新版(五星卡): 9 + 5位地区码(模拟) + 8位日期 + 3位顺序码 + 校验码
+      // 实际上前6位规则复杂，这里模拟: 9 + 任意5位数字(模拟地区)
+      // 或者为了看起来像真的，用 9 + 11000 (北京)
+      const regionCode =
+        "9" + String(Math.floor(Math.random() * 90000) + 10000).substring(1); // 9xxxxx
+      const date = `${birthYear}${String(birthMonth).padStart(2, "0")}${String(
+        birthDay
+      ).padStart(2, "0")}`;
+      const seq = String(
+        Math.floor(Math.random() * 500) * 2 + (gender === "male" ? 1 : 0)
+      ).padStart(3, "0");
+      const id17 = regionCode + date + seq;
+      const checkCode = calcCheckCode(id17);
+      number = id17 + checkCode;
+      info = `新版五星卡(18位) | ${
+        gender === "male" ? "男" : "女"
+      } | ${birthYear}年`;
+    }
 
     list.push({
       id: Date.now() + i,
       number,
-      type: "永久居留证",
-      info: `${typeMap[type]?.name || "未知"} | ${birthYear}-${String(
-        birthMonth
-      ).padStart(2, "0")}-${String(birthDay).padStart(2, "0")} | ${age}岁`,
+      type: "外国人永居证",
+      info: info,
     });
   }
 
   return list;
 };
 
-// 生成港澳台通行证
+// 生成港澳台通行证 (回乡证/台胞证)
 const generatePermit = () => {
   const { type, count } = permitConfig.value;
   const list = [];
-  const typeMap = { HK: "香港", MO: "澳门", TW: "台湾" };
+  const typeMap = {
+    HK: "香港(回乡证)",
+    MO: "澳门(回乡证)",
+    TW: "台湾(台胞证)",
+  };
 
   for (let i = 0; i < count; i++) {
-    const letter = String.fromCharCode(65 + Math.floor(Math.random() * 26));
-    const seq = String(Math.floor(Math.random() * 90000000) + 10000000);
-    const number = `${letter}${seq}`;
+    let number = "";
+    if (type === "HK") {
+      // H + 8位数字
+      const seq = String(Math.floor(Math.random() * 100000000)).padStart(
+        8,
+        "0"
+      );
+      number = `H${seq}`;
+    } else if (type === "MO") {
+      // M + 8位数字
+      const seq = String(Math.floor(Math.random() * 100000000)).padStart(
+        8,
+        "0"
+      );
+      number = `M${seq}`;
+    } else if (type === "TW") {
+      // 8位数字
+      const seq = String(Math.floor(Math.random() * 100000000)).padStart(
+        8,
+        "0"
+      );
+      number = `${seq}`;
+    }
 
     list.push({
       id: Date.now() + i,
       number,
-      type: `${typeMap[type]}通行证`,
-      info: `地区: ${typeMap[type]}`,
+      type: `${typeMap[type]}`,
+      info: `通行证`,
     });
   }
 
@@ -213,12 +251,14 @@ const generatePermit = () => {
 
 // 生成港澳台居住证
 const generateResidence = () => {
-  const { region, birthYear, birthMonth, birthDay, gender, type, count } =
+  const { birthYear, birthMonth, birthDay, gender, type, count } =
     residenceConfig.value;
   const list = [];
   const typeMap = { HK: "香港", MO: "澳门", TW: "台湾" };
+  const regionMap = { HK: "810000", MO: "820000", TW: "830000" };
 
   for (let i = 0; i < count; i++) {
+    const region = regionMap[type];
     const date = `${birthYear}${String(birthMonth).padStart(2, "0")}${String(
       birthDay
     ).padStart(2, "0")}`;
@@ -230,13 +270,12 @@ const generateResidence = () => {
     const number = id17 + checkCode;
 
     const age = new Date().getFullYear() - birthYear;
-    const regionName = regions.find((r) => r.value === region)?.label || "未知";
 
     list.push({
       id: Date.now() + i,
       number,
       type: `${typeMap[type]}居住证`,
-      info: `${regionName} | ${birthYear}-${String(birthMonth).padStart(
+      info: `${region} | ${birthYear}-${String(birthMonth).padStart(
         2,
         "0"
       )}-${String(birthDay).padStart(2, "0")} | ${
@@ -337,6 +376,13 @@ const dayOptions = computed(() => {
     label: `${i + 1}日`,
   }));
 });
+
+const countOptions = computed(() => {
+  return Array.from({ length: 50 }, (_, i) => ({
+    value: i + 1,
+    label: `${i + 1}条`,
+  }));
+});
 </script>
 
 <template>
@@ -354,358 +400,354 @@ const dayOptions = computed(() => {
         </div>
       </div>
 
-      <div class="tab-section">
-        <a-tabs v-model:activeKey="activeTab" class="top-tabs" type="card">
-          <a-tab-pane key="idcard">
-            <template #tab>
-              <span class="tab-label">
-                <UserOutlined />
-                身份证
-              </span>
-            </template>
-          </a-tab-pane>
-          <a-tab-pane key="residence">
-            <template #tab>
-              <span class="tab-label">
-                <CreditCardOutlined />
-                居住证
-              </span>
-            </template>
-          </a-tab-pane>
-          <a-tab-pane key="permit">
-            <template #tab>
-              <span class="tab-label">
-                <SafetyCertificateOutlined />
-                通行证
-              </span>
-            </template>
-          </a-tab-pane>
-          <a-tab-pane key="permanent">
-            <template #tab>
-              <span class="tab-label">
-                <GlobalOutlined />
-                永久居留证
-              </span>
-            </template>
-          </a-tab-pane>
-        </a-tabs>
-      </div>
-
-      <div class="content-body">
-        <div class="config-wrapper">
-          <div class="config-panel" v-if="activeTab === 'idcard'">
-            <a-form layout="vertical" class="config-form">
-              <a-row :gutter="12">
-                <a-col :span="24">
-                  <a-form-item label="地区">
-                    <a-select
-                      v-model:value="idcardConfig.region"
-                      :options="regions"
-                      show-search
-                      placeholder="选择地区"
-                      style="width: 100%"
-                    />
-                  </a-form-item>
-                </a-col>
-              </a-row>
-              <a-row :gutter="12">
-                <a-col :span="12">
-                  <a-form-item label="出生年份">
-                    <a-select
-                      v-model:value="idcardConfig.birthYear"
-                      :options="yearOptions"
-                      show-search
-                      style="width: 100%"
-                    />
-                  </a-form-item>
-                </a-col>
-                <a-col :span="12">
-                  <a-form-item label="日期 (月/日)">
-                    <div style="display: flex; gap: 8px">
-                      <a-select
-                        v-model:value="idcardConfig.birthMonth"
-                        :options="monthOptions"
-                        placeholder="月"
-                        style="flex: 1"
-                      />
-                      <a-select
-                        v-model:value="idcardConfig.birthDay"
-                        :options="dayOptions"
-                        placeholder="日"
-                        style="flex: 1"
-                      />
-                    </div>
-                  </a-form-item>
-                </a-col>
-              </a-row>
-              <a-row :gutter="12">
-                <a-col :span="24">
-                  <a-form-item label="性别">
-                    <a-radio-group
-                      v-model:value="idcardConfig.gender"
-                      button-style="solid"
-                      style="width: 100%; display: flex"
-                    >
-                      <a-radio-button
-                        value="male"
-                        style="flex: 1; text-align: center"
-                        >男</a-radio-button
-                      >
-                      <a-radio-button
-                        value="female"
-                        style="flex: 1; text-align: center"
-                        >女</a-radio-button
-                      >
-                    </a-radio-group>
-                  </a-form-item>
-                </a-col>
-              </a-row>
-              <a-row :gutter="12">
-                <a-col :span="24">
-                  <a-form-item label="生成数量">
-                    <a-slider
-                      v-model:value="idcardConfig.count"
-                      :min="1"
-                      :max="50"
-                      :marks="{ 1: '1', 25: '25', 50: '50' }"
-                    />
-                  </a-form-item>
-                </a-col>
-              </a-row>
-            </a-form>
-          </div>
-
-          <div class="config-panel" v-if="activeTab === 'permanent'">
-            <a-form layout="vertical" class="config-form">
-              <a-row :gutter="12">
-                <a-col :span="24">
-                  <a-form-item label="国家/地区">
-                    <a-select
-                      v-model:value="permanentConfig.type"
-                      style="width: 100%"
-                    >
-                      <a-select-option value="GBR"
-                        >🇬🇧 英国 (GBR)</a-select-option
-                      >
-                      <a-select-option value="USA"
-                        >🇺🇸 美国 (USA)</a-select-option
-                      >
-                      <a-select-option value="JPN"
-                        >🇯🇵 日本 (JPN)</a-select-option
-                      >
-                      <a-select-option value="PRC"
-                        >🇨🇳 中国 (CHN)</a-select-option
-                      >
-                      <a-select-option value="HKM"
-                        >🇭🇰 港澳 (HKM)</a-select-option
-                      >
-                      <a-select-option value="TWN"
-                        >🇹🇼 台湾 (TWN)</a-select-option
-                      >
-                    </a-select>
-                  </a-form-item>
-                </a-col>
-              </a-row>
-              <a-row :gutter="12">
-                <a-col :span="12">
-                  <a-form-item label="出生年份">
-                    <a-select
-                      v-model:value="permanentConfig.birthYear"
-                      :options="yearOptions"
-                      show-search
-                      style="width: 100%"
-                    />
-                  </a-form-item>
-                </a-col>
-                <a-col :span="12">
-                  <a-form-item label="日期 (月/日)">
-                    <div style="display: flex; gap: 8px">
-                      <a-select
-                        v-model:value="permanentConfig.birthMonth"
-                        :options="monthOptions"
-                        placeholder="月"
-                        style="flex: 1"
-                      />
-                      <a-select
-                        v-model:value="permanentConfig.birthDay"
-                        :options="dayOptions"
-                        placeholder="日"
-                        style="flex: 1"
-                      />
-                    </div>
-                  </a-form-item>
-                </a-col>
-              </a-row>
-              <a-row :gutter="12">
-                <a-col :span="24">
-                  <a-form-item label="生成数量">
-                    <a-slider
-                      v-model:value="permanentConfig.count"
-                      :min="1"
-                      :max="50"
-                      :marks="{ 1: '1', 25: '25', 50: '50' }"
-                    />
-                  </a-form-item>
-                </a-col>
-              </a-row>
-            </a-form>
-          </div>
-
-          <div class="config-panel" v-if="activeTab === 'permit'">
-            <a-form layout="vertical" class="config-form">
-              <a-row :gutter="12">
-                <a-col :span="24">
-                  <a-form-item label="地区类型">
-                    <a-radio-group
-                      v-model:value="permitConfig.type"
-                      button-style="solid"
-                      style="display: flex"
-                    >
-                      <a-radio-button
-                        value="HK"
-                        style="flex: 1; text-align: center"
-                        >🇭🇰 香港</a-radio-button
-                      >
-                      <a-radio-button
-                        value="MO"
-                        style="flex: 1; text-align: center"
-                        >🇲🇴 澳门</a-radio-button
-                      >
-                      <a-radio-button
-                        value="TW"
-                        style="flex: 1; text-align: center"
-                        >🇹🇼 台湾</a-radio-button
-                      >
-                    </a-radio-group>
-                  </a-form-item>
-                </a-col>
-              </a-row>
-              <a-row :gutter="12">
-                <a-col :span="24">
-                  <a-form-item label="生成数量">
-                    <a-slider
-                      v-model:value="permitConfig.count"
-                      :min="1"
-                      :max="50"
-                      :marks="{ 1: '1', 25: '25', 50: '50' }"
-                    />
-                  </a-form-item>
-                </a-col>
-              </a-row>
-            </a-form>
-          </div>
-
-          <div class="config-panel" v-if="activeTab === 'residence'">
-            <a-form layout="vertical" class="config-form">
-              <a-row :gutter="12">
-                <a-col :span="12">
-                  <a-form-item label="来源地">
-                    <a-select v-model:value="residenceConfig.type">
-                      <a-select-option value="HK">🇭🇰 香港</a-select-option>
-                      <a-select-option value="MO">🇲🇴 澳门</a-select-option>
-                      <a-select-option value="TW">🇹🇼 台湾</a-select-option>
-                    </a-select>
-                  </a-form-item>
-                </a-col>
-                <a-col :span="12">
-                  <a-form-item label="居住地">
-                    <a-select
-                      v-model:value="residenceConfig.region"
-                      :options="regions"
-                      show-search
-                    />
-                  </a-form-item>
-                </a-col>
-              </a-row>
-              <a-row :gutter="12">
-                <a-col :span="12">
-                  <a-form-item label="出生年份">
-                    <a-select
-                      v-model:value="residenceConfig.birthYear"
-                      :options="yearOptions"
-                      show-search
-                    />
-                  </a-form-item>
-                </a-col>
-                <a-col :span="12">
-                  <a-form-item label="日期 (月/日)">
-                    <div style="display: flex; gap: 8px">
-                      <a-select
-                        v-model:value="residenceConfig.birthMonth"
-                        :options="monthOptions"
-                        placeholder="月"
-                        style="flex: 1"
-                      />
-                      <a-select
-                        v-model:value="residenceConfig.birthDay"
-                        :options="dayOptions"
-                        placeholder="日"
-                        style="flex: 1"
-                      />
-                    </div>
-                  </a-form-item>
-                </a-col>
-              </a-row>
-              <a-row :gutter="12">
-                <a-col :span="24">
-                  <a-form-item label="性别">
-                    <a-radio-group
-                      v-model:value="residenceConfig.gender"
-                      button-style="solid"
-                      style="display: flex; width: 100%"
-                    >
-                      <a-radio-button
-                        value="male"
-                        style="flex: 1; text-align: center"
-                        >男</a-radio-button
-                      >
-                      <a-radio-button
-                        value="female"
-                        style="flex: 1; text-align: center"
-                        >女</a-radio-button
-                      >
-                    </a-radio-group>
-                  </a-form-item>
-                </a-col>
-              </a-row>
-              <a-row :gutter="12">
-                <a-col :span="24">
-                  <a-form-item label="生成数量">
-                    <a-slider
-                      v-model:value="residenceConfig.count"
-                      :min="1"
-                      :max="50"
-                      :marks="{ 1: '1', 25: '25', 50: '50' }"
-                    />
-                  </a-form-item>
-                </a-col>
-              </a-row>
-            </a-form>
-          </div>
-
-          <div class="action-bar">
-            <a-button
-              type="primary"
-              size="large"
-              @click="handleGenerate"
-              :loading="generating"
-              block
-              class="generate-btn"
+      <div class="content-wrapper">
+        <div class="left-panel">
+          <div class="nav-menu">
+            <div
+              class="nav-item"
+              :class="{ active: activeTab === 'idcard' }"
+              @click="activeTab = 'idcard'"
             >
-              <template #icon><ReloadOutlined /></template>
-              立即生成证件号码
-            </a-button>
+              <UserOutlined />
+              <span>居民身份证</span>
+            </div>
+            <div
+              class="nav-item"
+              :class="{ active: activeTab === 'residence' }"
+              @click="activeTab = 'residence'"
+            >
+              <CreditCardOutlined />
+              <span>居住证</span>
+            </div>
+            <div
+              class="nav-item"
+              :class="{ active: activeTab === 'permit' }"
+              @click="activeTab = 'permit'"
+            >
+              <SafetyCertificateOutlined />
+              <span>通行证</span>
+            </div>
+            <div
+              class="nav-item"
+              :class="{ active: activeTab === 'permanent' }"
+              @click="activeTab = 'permanent'"
+            >
+              <GlobalOutlined />
+              <span>永久居留证</span>
+            </div>
+          </div>
+
+          <div class="config-container">
+            <div class="config-panel" v-if="activeTab === 'idcard'">
+              <a-form layout="vertical" class="config-form">
+                <a-row :gutter="12">
+                  <a-col :span="24">
+                    <a-form-item label="地区">
+                      <a-select
+                        v-model:value="idcardConfig.region"
+                        :options="regions"
+                        show-search
+                        placeholder="选择地区"
+                        style="width: 100%"
+                      />
+                    </a-form-item>
+                  </a-col>
+                </a-row>
+                <a-row :gutter="12">
+                  <a-col :span="12">
+                    <a-form-item label="出生年份">
+                      <a-select
+                        v-model:value="idcardConfig.birthYear"
+                        :options="yearOptions"
+                        show-search
+                        style="width: 100%"
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col :span="12">
+                    <a-form-item label="日期 (月/日)">
+                      <div style="display: flex; gap: 8px">
+                        <a-select
+                          v-model:value="idcardConfig.birthMonth"
+                          :options="monthOptions"
+                          placeholder="月"
+                          style="flex: 1"
+                        />
+                        <a-select
+                          v-model:value="idcardConfig.birthDay"
+                          :options="dayOptions"
+                          placeholder="日"
+                          style="flex: 1"
+                        />
+                      </div>
+                    </a-form-item>
+                  </a-col>
+                </a-row>
+                <a-row :gutter="12">
+                  <a-col :span="12">
+                    <a-form-item label="性别">
+                      <a-select
+                        v-model:value="idcardConfig.gender"
+                        :options="[
+                          { value: 'male', label: '男' },
+                          { value: 'female', label: '女' },
+                        ]"
+                        style="width: 100%"
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col :span="12">
+                    <a-form-item label="生成数量">
+                      <a-select
+                        v-model:value="idcardConfig.count"
+                        :options="countOptions"
+                        style="width: 100%"
+                      />
+                    </a-form-item>
+                  </a-col>
+                </a-row>
+              </a-form>
+            </div>
+
+            <div class="config-panel" v-if="activeTab === 'permanent'">
+              <a-form layout="vertical" class="config-form">
+                <a-row :gutter="12">
+                  <a-col :span="24">
+                    <a-form-item label="版本">
+                      <a-radio-group
+                        v-model:value="permanentConfig.version"
+                        button-style="solid"
+                        style="width: 100%; display: flex"
+                      >
+                        <a-radio-button
+                          value="new"
+                          style="flex: 1; text-align: center"
+                          >新版五星卡 (18位)</a-radio-button
+                        >
+                        <a-radio-button
+                          value="old"
+                          style="flex: 1; text-align: center"
+                          >旧版 (15位)</a-radio-button
+                        >
+                      </a-radio-group>
+                    </a-form-item>
+                  </a-col>
+                </a-row>
+                <a-row :gutter="12">
+                  <a-col :span="12">
+                    <a-form-item label="出生年份">
+                      <a-select
+                        v-model:value="permanentConfig.birthYear"
+                        :options="yearOptions"
+                        show-search
+                        style="width: 100%"
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col :span="12">
+                    <a-form-item label="日期 (月/日)">
+                      <div style="display: flex; gap: 8px">
+                        <a-select
+                          v-model:value="permanentConfig.birthMonth"
+                          :options="monthOptions"
+                          placeholder="月"
+                          style="flex: 1"
+                        />
+                        <a-select
+                          v-model:value="permanentConfig.birthDay"
+                          :options="dayOptions"
+                          placeholder="日"
+                          style="flex: 1"
+                        />
+                      </div>
+                    </a-form-item>
+                  </a-col>
+                </a-row>
+                <a-row :gutter="12">
+                  <a-col :span="12" v-if="permanentConfig.version === 'new'">
+                    <a-form-item label="性别">
+                      <a-select
+                        v-model:value="permanentConfig.gender"
+                        :options="[
+                          { value: 'male', label: '男' },
+                          { value: 'female', label: '女' },
+                        ]"
+                        style="width: 100%"
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col :span="permanentConfig.version === 'new' ? 12 : 24">
+                    <a-form-item label="生成数量">
+                      <a-select
+                        v-model:value="permanentConfig.count"
+                        :options="countOptions"
+                        style="width: 100%"
+                      />
+                    </a-form-item>
+                  </a-col>
+                </a-row>
+              </a-form>
+            </div>
+
+            <div class="config-panel" v-if="activeTab === 'permit'">
+              <a-form layout="vertical" class="config-form">
+                <a-row :gutter="12">
+                  <a-col :span="24">
+                    <a-form-item label="地区类型">
+                      <a-radio-group
+                        v-model:value="permitConfig.type"
+                        button-style="solid"
+                        style="display: flex"
+                      >
+                        <a-radio-button
+                          value="HK"
+                          style="flex: 1; text-align: center"
+                          >🇭🇰 香港</a-radio-button
+                        >
+                        <a-radio-button
+                          value="MO"
+                          style="flex: 1; text-align: center"
+                          >🇲🇴 澳门</a-radio-button
+                        >
+                        <a-radio-button
+                          value="TW"
+                          style="flex: 1; text-align: center"
+                          >🇹🇼 台湾</a-radio-button
+                        >
+                      </a-radio-group>
+                    </a-form-item>
+                  </a-col>
+                </a-row>
+                <a-row :gutter="12">
+                  <a-col :span="24">
+                    <a-form-item label="生成数量">
+                      <a-select
+                        v-model:value="permitConfig.count"
+                        :options="countOptions"
+                        style="width: 100%"
+                      />
+                    </a-form-item>
+                  </a-col>
+                </a-row>
+              </a-form>
+            </div>
+
+            <div class="config-panel" v-if="activeTab === 'residence'">
+              <a-form layout="vertical" class="config-form">
+                <a-row :gutter="12">
+                  <a-col :span="24">
+                    <a-form-item
+                      label="来源地 (前6位固定: 香港810000 澳门820000 台湾830000)"
+                    >
+                      <a-radio-group
+                        v-model:value="residenceConfig.type"
+                        button-style="solid"
+                        style="display: flex; width: 100%"
+                      >
+                        <a-radio-button
+                          value="HK"
+                          style="flex: 1; text-align: center"
+                          >🇭🇰 香港</a-radio-button
+                        >
+                        <a-radio-button
+                          value="MO"
+                          style="flex: 1; text-align: center"
+                          >🇲🇴 澳门</a-radio-button
+                        >
+                        <a-radio-button
+                          value="TW"
+                          style="flex: 1; text-align: center"
+                          >🇹🇼 台湾</a-radio-button
+                        >
+                      </a-radio-group>
+                    </a-form-item>
+                  </a-col>
+                </a-row>
+                <a-row :gutter="12">
+                  <a-col :span="12">
+                    <a-form-item label="出生年份">
+                      <a-select
+                        v-model:value="residenceConfig.birthYear"
+                        :options="yearOptions"
+                        show-search
+                        style="width: 100%"
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col :span="12">
+                    <a-form-item label="日期 (月/日)">
+                      <div style="display: flex; gap: 8px">
+                        <a-select
+                          v-model:value="residenceConfig.birthMonth"
+                          :options="monthOptions"
+                          placeholder="月"
+                          style="flex: 1"
+                        />
+                        <a-select
+                          v-model:value="residenceConfig.birthDay"
+                          :options="dayOptions"
+                          placeholder="日"
+                          style="flex: 1"
+                        />
+                      </div>
+                    </a-form-item>
+                  </a-col>
+                </a-row>
+                <a-row :gutter="12">
+                  <a-col :span="12">
+                    <a-form-item label="性别">
+                      <a-select
+                        v-model:value="residenceConfig.gender"
+                        :options="[
+                          { value: 'male', label: '男' },
+                          { value: 'female', label: '女' },
+                        ]"
+                        style="width: 100%"
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col :span="12">
+                    <a-form-item label="生成数量">
+                      <a-select
+                        v-model:value="residenceConfig.count"
+                        :options="countOptions"
+                        style="width: 100%"
+                      />
+                    </a-form-item>
+                  </a-col>
+                </a-row>
+              </a-form>
+            </div>
+
+            <div class="action-bar">
+              <a-button
+                type="primary"
+                size="large"
+                @click="handleGenerate"
+                :loading="generating"
+                block
+                class="generate-btn"
+              >
+                <template #icon><ReloadOutlined /></template>
+                立即生成
+              </a-button>
+            </div>
           </div>
         </div>
 
-        <div class="results-container">
+        <div class="right-panel">
           <div class="results-header">
             <span class="results-title"
               >生成结果
               <span class="count-badge" v-if="results.length">{{
                 results.length
               }}</span>
-              <a-tag v-if="results.length" color="blue" style="margin-left: 8px">{{ results[0].type }}</a-tag></span
+              <a-tag
+                v-if="results.length"
+                color="blue"
+                style="margin-left: 8px"
+                >{{ results[0].type }}</a-tag
+              ></span
             >
             <div class="header-actions" v-if="results.length">
               <a-button size="small" @click="exportToTxt">
@@ -731,31 +773,33 @@ const dayOptions = computed(() => {
               v-if="results.length > 0"
             >
               <div v-for="item in results" :key="item.id" class="result-item">
-                <div class="item-icon">
-                  <IdcardOutlined />
-                </div>
                 <div class="result-content">
-                  <div class="result-number">{{ item.number }}</div>
+                  <div class="result-row">
+                    <div class="result-number">{{ item.number }}</div>
+                    <div class="result-type-tag">{{ item.type }}</div>
+                  </div>
                   <div class="result-info">{{ item.info }}</div>
                 </div>
-                <a-tooltip title="复制">
-                  <a-button
-                    type="text"
-                    class="copy-btn"
-                    @click="copyItem(item.number)"
-                  >
-                    <CopyOutlined />
-                  </a-button>
-                </a-tooltip>
+                <div class="result-actions">
+                  <a-tooltip title="复制">
+                    <a-button
+                      type="text"
+                      class="action-btn"
+                      @click="copyItem(item.number)"
+                    >
+                      <CopyOutlined />
+                    </a-button>
+                  </a-tooltip>
+                </div>
               </div>
             </TransitionGroup>
 
             <div v-else class="empty-state">
-              <div class="empty-image">
+              <div class="empty-icon-wrapper">
                 <IdcardOutlined />
               </div>
               <h3>等待生成</h3>
-              <p>请在上方配置参数并点击生成按钮</p>
+              <p>请在左侧配置参数并点击生成按钮</p>
             </div>
           </div>
         </div>
@@ -765,53 +809,56 @@ const dayOptions = computed(() => {
 </template>
 
 <style scoped>
+.title-group {
+  display: flex;
+}
+.title-group .title-text {
+  margin-left: 10px;
+}
 .idcard-view {
   height: 100%;
-  padding: 16px;
+  padding: 24px;
   background: var(--bg-color);
+  overflow: hidden;
 }
 
 .main-container {
-  max-width: 1600px;
+  max-width: 1400px;
   margin: 0 auto;
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
 }
 
 /* Header */
 .header-section {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-
-.title-group {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 16px;
+  padding-bottom: 8px;
 }
 
 .icon-wrapper {
-  width: 48px;
-  height: 48px;
+  width: 44px;
+  height: 44px;
   background: var(--primary-gradient);
   border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #fff;
-  font-size: 24px;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+  font-size: 22px;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
 }
 
 .title-text h2 {
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 700;
   margin: 0;
   color: var(--text-primary);
+  line-height: 1.2;
 }
 
 .title-text p {
@@ -820,120 +867,150 @@ const dayOptions = computed(() => {
   font-size: 13px;
 }
 
-/* Tab Section */
-.tab-section {
-  margin-bottom: 16px;
-}
-
-.top-tabs {
-  background: #fff;
-  border-radius: var(--border-radius-lg);
-  padding: 16px 20px 0;
-  box-shadow: var(--box-shadow);
-  border: 1px solid var(--border-color);
-}
-
-.top-tabs :deep(.ant-tabs-nav) {
-  margin-bottom: 0;
-}
-
-.top-tabs :deep(.ant-tabs-content-holder) {
-  display: none;
-}
-
 /* Content Layout */
-.content-body {
-  display: grid;
-  grid-template-columns: 320px 1fr;
-  gap: 20px;
+.content-wrapper {
+  display: flex;
+  gap: 24px;
   flex: 1;
   min-height: 0;
 }
 
-/* Config Panel */
-.config-wrapper {
+/* Left Panel */
+.left-panel {
+  width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+.nav-menu {
   background: #fff;
-  border-radius: var(--border-radius-lg);
-  padding: 20px;
+  border-radius: 16px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-shadow: var(--box-shadow);
+  border: 1px solid var(--border-color);
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: all 0.2s;
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.nav-item:hover {
+  background: #f1f5f9;
+  color: var(--text-primary);
+}
+
+.nav-item.active {
+  background: var(--primary-light);
+  color: var(--primary-color);
+}
+
+.nav-item .anticon {
+  font-size: 16px;
+}
+
+.config-container {
+  flex: 1;
+  background: #fff;
+  border-radius: 16px;
+  padding: 24px;
   box-shadow: var(--box-shadow);
   border: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .config-panel {
   flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
 }
 
 .config-form :deep(.ant-form-item) {
-  margin-bottom: 16px;
+  margin-bottom: 18px;
 }
 
-.config-form :deep(.ant-form-item-label) {
-  padding-bottom: 4px;
+.config-form :deep(.ant-form-item-label > label) {
+  font-size: 13px;
+  color: var(--text-secondary);
 }
 
 .action-bar {
-  margin-top: auto;
-}
-
-.tab-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 14px;
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-color);
 }
 
 .generate-btn {
-  height: 44px;
-  font-size: 16px;
+  height: 42px;
+  font-size: 15px;
+  font-weight: 600;
+  border-radius: 10px;
   background: var(--primary-gradient);
   border: none;
   box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+  transition: all 0.2s;
 }
 
 .generate-btn:hover {
-  filter: brightness(1.1);
   transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.3);
 }
 
-/* Results Panel */
-.results-container {
+/* Right Panel */
+.right-panel {
+  flex: 1;
   background: #fff;
-  border-radius: var(--border-radius-lg);
+  border-radius: 16px;
   box-shadow: var(--box-shadow);
+  border: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
+  min-width: 0;
   overflow: hidden;
-  border: 1px solid var(--border-color);
 }
 
 .results-header {
-  padding: 16px 20px;
+  padding: 16px 24px;
   border-bottom: 1px solid var(--border-color);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: rgba(248, 250, 252, 0.5);
+  background: #fff;
 }
 
 .results-title {
-  font-weight: 600;
-  font-size: 15px;
+  font-size: 16px;
+  font-weight: 700;
   color: var(--text-primary);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 .count-badge {
-  background: var(--primary-color);
-  color: #fff;
-  padding: 1px 8px;
-  border-radius: 10px;
+  background: var(--primary-light);
+  color: var(--primary-color);
+  padding: 2px 10px;
+  border-radius: 20px;
   font-size: 12px;
-  font-weight: normal;
+  font-weight: 600;
 }
 
 .header-actions {
@@ -944,106 +1021,116 @@ const dayOptions = computed(() => {
 .results-scroll-area {
   flex: 1;
   overflow-y: auto;
-  padding: 16px;
+  padding: 20px;
   background: #f8fafc;
 }
 
-/* List Transitions */
-.list-enter-active,
-.list-leave-active {
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.list-enter-from {
-  opacity: 0;
-  transform: translateY(20px);
-}
-.list-leave-to {
-  opacity: 0;
-  transform: scale(0.95);
+/* Result List */
+.results-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .result-item {
+  background: #fff;
+  border-radius: 12px;
+  padding: 16px 20px;
   display: flex;
   align-items: center;
-  padding: 12px 14px;
-  background: #fff;
-  border-radius: 10px;
-  margin-bottom: 8px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-  border: 1px solid transparent;
-  transition: all 0.2s;
+  justify-content: space-between;
+  border: 1px solid var(--border-color);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   overflow: hidden;
 }
 
-.result-item::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 4px;
-  background: var(--primary-color);
-  opacity: 0;
-  transition: opacity 0.2s;
-}
-
 .result-item:hover {
-  transform: translateX(4px);
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.06);
-  border-color: rgba(59, 130, 246, 0.2);
-}
-
-.result-item:hover::before {
-  opacity: 1;
-}
-
-.item-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  background: #eff6ff;
-  color: var(--primary-color);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 18px;
-  margin-right: 12px;
-  flex-shrink: 0;
+  border-color: var(--primary-color);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+  transform: translateY(-2px);
 }
 
 .result-content {
   flex: 1;
+  min-width: 0;
+}
+
+.result-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
 }
 
 .result-number {
-  font-family: "JetBrains Mono", "Consolas", monospace;
-  font-size: 16px;
+  font-family: "JetBrains Mono", "SF Mono", "Consolas", monospace;
+  font-size: 18px;
   font-weight: 600;
   color: var(--text-primary);
-  letter-spacing: 0.3px;
-  margin-bottom: 2px;
+  letter-spacing: 0.5px;
+}
+
+.result-type-tag {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #f1f5f9;
+  color: var(--text-tertiary);
+  border: 1px solid var(--border-color);
 }
 
 .result-info {
-  font-size: 12px;
-  color: var(--text-tertiary);
-  line-height: 1.4;
-}
-
-.copy-btn {
-  opacity: 0;
-  transition: all 0.2s;
+  font-size: 13px;
   color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.result-item:hover .copy-btn {
+.result-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+
+.result-item:hover .result-actions {
   opacity: 1;
 }
 
-.copy-btn:hover {
+.action-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  background: #f8fafc;
+  border: 1px solid transparent;
+  transition: all 0.2s;
+}
+
+.action-btn:hover {
+  background: var(--primary-light);
   color: var(--primary-color);
-  background: #eff6ff;
+  border-color: rgba(59, 130, 246, 0.1);
+}
+
+/* Animations */
+.list-enter-active,
+.list-leave-active {
+  transition: all 0.3s ease;
+}
+.list-enter-from {
+  opacity: 0;
+  transform: translateY(10px);
+}
+.list-leave-to {
+  opacity: 0;
+  transform: scale(0.98);
 }
 
 /* Empty State */
@@ -1054,63 +1141,80 @@ const dayOptions = computed(() => {
   align-items: center;
   justify-content: center;
   color: var(--text-tertiary);
-  min-height: 300px;
+  min-height: 400px;
 }
 
-.empty-image {
-  width: 80px;
-  height: 80px;
+.empty-icon-wrapper {
+  width: 96px;
+  height: 96px;
   border-radius: 50%;
   background: #f1f5f9;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 32px;
-  margin-bottom: 16px;
+  font-size: 40px;
+  margin-bottom: 24px;
   color: #cbd5e1;
+  border: 4px solid #fff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 }
 
 .empty-state h3 {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 600;
   color: var(--text-secondary);
   margin-bottom: 8px;
 }
 
-/* Responsive adjustments */
-@media (max-width: 900px) {
-  .content-body {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr;
+/* Responsive */
+@media (max-width: 960px) {
+  .content-wrapper {
+    flex-direction: column;
   }
 
-  .config-wrapper {
-    min-height: auto;
+  .left-panel {
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
   }
 
-  .results-container {
-    min-height: 400px;
+  .nav-menu {
+    flex-direction: row;
+    overflow-x: auto;
+    width: 100%;
+    padding: 6px;
+  }
+
+  .nav-item {
+    flex: 1;
+    justify-content: center;
+    white-space: nowrap;
+  }
+
+  .config-container {
+    width: 100%;
   }
 }
 
 @media (max-width: 600px) {
   .idcard-view {
-    padding: 12px;
+    padding: 16px;
   }
 
-  .header-section {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 12px;
+  .nav-item span {
+    display: none;
   }
 
-  .header-actions {
-    width: 100%;
-    justify-content: flex-end;
+  .nav-item {
+    padding: 10px;
+  }
+
+  .result-item {
+    padding: 14px;
   }
 
   .result-number {
-    font-size: 16px;
+    font-size: 15px;
   }
 }
 </style>

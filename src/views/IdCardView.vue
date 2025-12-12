@@ -427,7 +427,7 @@ const editorConfig = ref({
 });
 
 const selectedTemplate = ref("idcard_front");
-const activeCollapseKeys = ref(["2"]);
+const activeCollapseKeys = ref(["2", "3"]);
 
 const textFields = ref([
   { id: "name", label: "姓名", text: "", x: 100, y: 100 },
@@ -926,10 +926,8 @@ const saveImage = async () => {
     drawFinalCanvas();
 
     const desktop = (await homeDir()) + "Desktop/";
-    const timestamp = new Date()
-      .toISOString()
-      .replace(/[:.]/g, "-")
-      .slice(0, -5);
+    const now = new Date();
+    const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}-${String(now.getSeconds()).padStart(2, '0')}`;
     const filePath = await save({
       defaultPath: `${desktop}身份证_${timestamp}.png`,
       filters: [{ name: "Image", extensions: ["png"] }],
@@ -1372,7 +1370,7 @@ watch(activeTab, async (val) => {
                       v-for="field in textFields"
                       :key="field.id"
                       :id="`field-item-${field.id}`"
-                      class="field-item-container"
+                      class="field-item-container field-card-edit"
                       :class="{ active: selectedField?.id === field.id }"
                     >
                       <a-form-item :label="field.label" style="margin-bottom: 0">
@@ -1994,6 +1992,9 @@ watch(activeTab, async (val) => {
 </style>
 
 <style scoped>
+  .field-card-edit .ant-form-item{
+    margin-bottom: 0;
+  }
 /* Editor Specific Styles */
 .config-form :deep(.ant-collapse-content-box) {
   padding: 12px 0;

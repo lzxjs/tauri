@@ -433,7 +433,7 @@ const editorConfig = ref({
 });
 
 const selectedTemplate = ref("idcard_front");
-const activeCollapseKeys = ref(["1", "2", "3"]);
+const activeCollapseKeys = ref(["2"]);
 
 const textFields = ref([
   { id: "name", label: "姓名", text: "", x: 100, y: 100 },
@@ -1405,7 +1405,7 @@ watch(activeTab, async (val) => {
                             :step="1"
                             @change="drawCanvas"
                             @focus="selectedField = field"
-                            style="width: 70px;"
+                            style="width: 80px;"
                             placeholder="字号"
                           >
                             <template #prefix>T</template>
@@ -1648,7 +1648,7 @@ watch(activeTab, async (val) => {
 
 /* Left Panel */
 .left-panel {
-  width: 340px;
+  width: 380px;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -1697,7 +1697,7 @@ watch(activeTab, async (val) => {
   flex: 1;
   background: #fff;
   border-radius: 16px;
-  padding: 24px;
+  padding: 20px;
   box-shadow: var(--box-shadow);
   border: 1px solid var(--border-color);
   display: flex;
@@ -2025,8 +2025,9 @@ watch(activeTab, async (val) => {
 }
 
 .field-item-container.active {
-  background: #e6f7ff;
-  border-color: #91caff;
+  background: #e6f4ff;
+  border-color: #1890ff;
+  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1);
 }
 
 .field-item-container:hover {

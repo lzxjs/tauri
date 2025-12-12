@@ -19,7 +19,8 @@
       "Bash(rm \"d:\\code\\tauri\\src\\services\\networkTrafficService.js\")",
       "Bash(npm install @tauri-apps/plugin-updater @tauri-apps/plugin-process)",
       "Bash(cargo check)",
-      "Bash(cmd /c taskkill:*)"
+      "Bash(cmd /c taskkill:*)",
+      "Bash(mkdir -p \"d:\\code\\tauri\\public\\img\\idcard\")"
     ]
   }
 }

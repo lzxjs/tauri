@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from "vue";
+import { ref, computed, watch, nextTick } from "vue";
 import { message } from "ant-design-vue";
 import {
   CopyOutlined,
@@ -433,10 +433,11 @@ const editorConfig = ref({
 });
 
 const selectedTemplate = ref("idcard_front");
+const activeCollapseKeys = ref(["1", "2", "3"]);
 
 const textFields = ref([
   { id: "name", label: "姓名", text: "", x: 100, y: 100 },
-  { id: "gender", label: "性别", text: "男", x: 100, y: 140 },
+  { id: "gender", label: "性别", text: "", x: 100, y: 140 },
   { id: "nation", label: "民族", text: "", x: 100, y: 180 },
   { id: "birth", label: "出生日期", text: "", x: 100, y: 220 },
   { id: "idcard", label: "身份证号码", text: "", x: 100, y: 260 },
@@ -502,17 +503,18 @@ const loadPresetTemplate = async () => {
     // 使用相对路径加载图片
     const imagePath = `/src/assets/img/idcard/${selectedPresetTemplate.value}`;
     const img = new Image();
-    img.onload = () => {
-      const canvas = canvasRef.value;
-      canvas.width = img.width;
-      canvas.height = img.height;
+    img.onload = async () => {
       backgroundImage.value = img;
+      await nextTick();
 
-      // 自动应用模板布局
-      applyTemplate(img.width, img.height);
-
-      drawCanvas();
-      message.success("预设模板加载成功");
+      const canvas = canvasRef.value;
+      if (canvas) {
+        canvas.width = img.width;
+        canvas.height = img.height;
+        applyTemplate(img.width, img.height);
+        drawCanvas();
+        message.success("预设模板加载成功");
+      }
     };
     img.onerror = () => {
       message.error("预设模板加载失败");
@@ -573,22 +575,28 @@ const uploadImage = async () => {
       const blob = new Blob([bytes]);
       const url = URL.createObjectURL(blob);
       const img = new Image();
-      img.onload = () => {
-        const canvas = canvasRef.value;
-        canvas.width = img.width;
-        canvas.height = img.height;
+      img.onload = async () => {
         backgroundImage.value = img;
 
-        // 清空预设模板选中值
-        selectedPresetTemplate.value = null;
+        // 等待 DOM 更新
+        await nextTick();
 
-        // 自动应用模板布局
-        applyTemplate(img.width, img.height);
+        const canvas = canvasRef.value;
+        if (canvas) {
+          canvas.width = img.width;
+          canvas.height = img.height;
 
-        drawCanvas();
+          // 清空预设模板选中值
+          selectedPresetTemplate.value = null;
+
+          // 自动应用模板布局
+          applyTemplate(img.width, img.height);
+
+          drawCanvas();
+          message.success("图片上传成功");
+        }
       };
       img.src = url;
-      message.success("图片上传成功");
     }
   } catch (error) {
     message.error("图片上传失败: " + error.message);
@@ -669,6 +677,16 @@ const drawCanvas = () => {
         // 绘制文本
         ctx.fillStyle = editorConfig.value.fontColor;
         ctx.fillText(field.text, field.x, field.y);
+
+        // 绘制选中框
+        if (selectedField.value?.id === field.id) {
+          ctx.save();
+          ctx.strokeStyle = '#1890ff';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([4, 4]);
+          ctx.strokeRect(field.x - 4, field.y - fontSize - 2, textWidth + 8, fontSize + 8);
+          ctx.restore();
+        }
       }
     }
   });
@@ -822,7 +840,7 @@ const handleMouseUp = () => {
   isDragging.value = false;
   isDraggingFace.value = false;
   isResizingFace.value = false;
-  selectedField.value = null;
+  // selectedField.value = null; // 保持选中状态，方便调整属性
   faceResizeHandle.value = null;
 };
 
@@ -940,6 +958,35 @@ const saveImage = async () => {
     message.error("保存失败: " + error.message);
   }
 };
+
+// 监听选中字段变化，自动滚动到对应配置项
+watch(selectedField, (newVal) => {
+  drawCanvas();
+  if (newVal) {
+    nextTick(() => {
+      const el = document.getElementById(`field-item-${newVal.id}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    });
+  }
+});
+
+// 监听 Tab 切换
+watch(activeTab, async (val) => {
+  if (val === 'editor') {
+    await nextTick();
+    if (backgroundImage.value) {
+      drawCanvas();
+    }
+  } else {
+    // 离开编辑器时重置选中状态
+    selectedField.value = null;
+    isDragging.value = false;
+    isDraggingFace.value = false;
+    isResizingFace.value = false;
+  }
+});
 </script>
 
 <template>
@@ -1286,77 +1333,108 @@ const saveImage = async () => {
 
             <div class="config-panel" v-if="activeTab === 'editor'">
               <a-form layout="vertical" class="config-form">
-                <a-form-item>
-                  <a-button type="primary" @click="uploadImage" block>
-                    <template #icon><UploadOutlined /></template>
-                    上传证件图片
-                  </a-button>
-                </a-form-item>
-                <a-form-item>
-                  <a-button @click="uploadFaceImage" block>
-                    <template #icon><UserOutlined /></template>
-                    上传人脸图片
-                  </a-button>
-                </a-form-item>
-                
-                <a-form-item label="预设模板">
-                  <a-select
-                    v-model:value="selectedPresetTemplate"
-                    :options="presetTemplates"
-                    placeholder="选择预设证件图片模板"
-                    @change="loadPresetTemplate"
-                    style="width: 100%"
-                  />
-                </a-form-item>
-                <a-divider style="margin: 16px 0" />
-                <div v-for="field in textFields" :key="field.id" style="margin-bottom: 16px;">
-                  <a-form-item :label="field.label">
-                    <div style="display: flex; gap: 8px; align-items: flex-start;">
-                      <a-textarea
-                        v-if="field.multiline"
-                        v-model:value="field.text"
-                        @input="drawCanvas"
-                        :rows="2"
-                        style="flex: 1;"
+                <a-collapse v-model:activeKey="activeCollapseKeys" ghost>
+                  <a-collapse-panel key="1" header="图片设置">
+                    <a-row :gutter="12">
+                      <a-col :span="12">
+                        <a-form-item>
+                          <a-button type="primary" @click="uploadImage" block>
+                            <template #icon><UploadOutlined /></template>
+                            上传证件
+                          </a-button>
+                        </a-form-item>
+                      </a-col>
+                      <a-col :span="12">
+                        <a-form-item>
+                          <a-button @click="uploadFaceImage" block>
+                            <template #icon><UserOutlined /></template>
+                            上传人脸
+                          </a-button>
+                        </a-form-item>
+                      </a-col>
+                    </a-row>
+                    
+                    <a-form-item label="预设模板">
+                      <a-select
+                        v-model:value="selectedPresetTemplate"
+                        :options="presetTemplates"
+                        placeholder="选择预设证件图片模板"
+                        @change="loadPresetTemplate"
+                        style="width: 100%"
                       />
-                      <a-input
-                        v-else
-                        v-model:value="field.text"
-                        @input="drawCanvas"
-                        style="flex: 1;"
-                      />
-                      <a-input-number
-                        v-model:value="field.fontSize"
-                        :min="12"
-                        :max="100"
-                        :step="1"
-                        @change="drawCanvas"
-                        style="width: 80px;"
-                        placeholder="字号"
-                      />
+                    </a-form-item>
+                  </a-collapse-panel>
+
+                  <a-collapse-panel key="2" header="字段内容">
+                    <div
+                      v-for="field in textFields"
+                      :key="field.id"
+                      :id="`field-item-${field.id}`"
+                      class="field-item-container"
+                      :class="{ active: selectedField?.id === field.id }"
+                    >
+                      <a-form-item :label="field.label" style="margin-bottom: 0">
+                        <div style="display: flex; gap: 8px; align-items: flex-start;">
+                          <a-textarea
+                            v-if="field.multiline"
+                            v-model:value="field.text"
+                            @input="drawCanvas"
+                            @focus="selectedField = field"
+                            :rows="2"
+                            style="flex: 1;"
+                          />
+                          <a-input
+                            v-else
+                            v-model:value="field.text"
+                            @input="drawCanvas"
+                            @focus="selectedField = field"
+                            style="flex: 1;"
+                          />
+                          <a-input-number
+                            v-model:value="field.fontSize"
+                            :min="12"
+                            :max="100"
+                            :step="1"
+                            @change="drawCanvas"
+                            @focus="selectedField = field"
+                            style="width: 70px;"
+                            placeholder="字号"
+                          >
+                            <template #prefix>T</template>
+                          </a-input-number>
+                        </div>
+                      </a-form-item>
                     </div>
-                  </a-form-item>
-                </div>
-                <a-divider style="margin: 16px 0">字体设置</a-divider>
-                <a-row :gutter="12">
-                  <a-col :span="8">
-                    <a-form-item label="字体大小">
-                      <a-slider v-model:value="editorConfig.fontSize" :min="10" :max="80" @change="drawCanvas" />
-                    </a-form-item>
-                  </a-col>
-                  <a-col :span="8">
-                    <a-form-item label="字体颜色">
-                      <input type="color" v-model="editorConfig.fontColor" @input="drawCanvas" style="width: 100%; height: 32px; border: 1px solid #d9d9d9; border-radius: 6px;" />
-                    </a-form-item>
-                  </a-col>
-                  <a-col :span="8">
-                    <a-form-item label="背景颜色">
-                      <input type="color" v-model="editorConfig.backgroundColor" @input="drawCanvas" style="width: 100%; height: 32px; border: 1px solid #d9d9d9; border-radius: 6px;" />
-                    </a-form-item>
-                  </a-col>
-                </a-row>
-                <a-divider style="margin: 16px 0" />
-                <a-form-item>
+                  </a-collapse-panel>
+
+                  <a-collapse-panel key="3" header="全局样式">
+                    <a-row :gutter="12">
+                      <a-col :span="24">
+                        <a-form-item label="全局字号">
+                          <a-slider v-model:value="editorConfig.fontSize" :min="10" :max="80" @change="drawCanvas" />
+                        </a-form-item>
+                      </a-col>
+                      <a-col :span="12">
+                        <a-form-item label="字体颜色">
+                          <div class="color-picker-wrapper">
+                            <input type="color" v-model="editorConfig.fontColor" @input="drawCanvas" />
+                            <span>{{ editorConfig.fontColor }}</span>
+                          </div>
+                        </a-form-item>
+                      </a-col>
+                      <a-col :span="12">
+                        <a-form-item label="背景颜色">
+                          <div class="color-picker-wrapper">
+                            <input type="color" v-model="editorConfig.backgroundColor" @input="drawCanvas" />
+                            <span>{{ editorConfig.backgroundColor }}</span>
+                          </div>
+                        </a-form-item>
+                      </a-col>
+                    </a-row>
+                  </a-collapse-panel>
+                </a-collapse>
+
+                <div style="padding: 0 16px">
                   <a-popconfirm
                     title="确定要清空所有表单内容吗？"
                     ok-text="确定"
@@ -1368,7 +1446,7 @@ const saveImage = async () => {
                       一键清空表单
                     </a-button>
                   </a-popconfirm>
-                </a-form-item>
+                </div>
               </a-form>
             </div>
 
@@ -1914,5 +1992,61 @@ const saveImage = async () => {
   .result-number {
     font-size: 15px;
   }
+}
+</style>
+
+<style scoped>
+/* Editor Specific Styles */
+.config-form :deep(.ant-collapse-content-box) {
+  padding: 12px 0;
+}
+
+.config-form :deep(.ant-collapse-header) {
+  padding: 12px 0 !important;
+  font-weight: 600;
+  color: var(--text-primary) !important;
+}
+
+.field-item-container {
+  padding: 12px;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px solid transparent;
+  margin-bottom: 12px;
+  transition: all 0.3s;
+}
+
+.field-item-container.active {
+  background: #e6f7ff;
+  border-color: #91caff;
+}
+
+.field-item-container:hover {
+  background: #f1f5f9;
+}
+
+.color-picker-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.color-picker-wrapper input[type="color"] {
+  width: 24px;
+  height: 24px;
+  border: none;
+  padding: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.color-picker-wrapper span {
+  font-size: 12px;
+  color: #666;
+  font-family: monospace;
 }
 </style>

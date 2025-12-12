@@ -11,9 +11,11 @@ import {
   CreditCardOutlined,
   DeleteOutlined,
   DownloadOutlined,
+  PictureOutlined,
+  UploadOutlined,
 } from "@ant-design/icons-vue";
-import { save } from "@tauri-apps/plugin-dialog";
-import { writeTextFile } from "@tauri-apps/plugin-fs";
+import { save, open } from "@tauri-apps/plugin-dialog";
+import { writeTextFile, readFile, writeFile } from "@tauri-apps/plugin-fs";
 import { homeDir } from "@tauri-apps/api/path";
 
 const activeTab = ref("idcard");
@@ -383,6 +385,308 @@ const countOptions = computed(() => {
     label: `${i + 1}条`,
   }));
 });
+
+// 预设模板配置（使用相对位置百分比）
+const templates = {
+  idcard_front: {
+    name: "身份证正面",
+    fontSize: 0.04, // 相对于图片宽度的比例
+    fields: [
+      { id: "name", label: "姓名", text: "张三", x: 0.25, y: 0.35 },
+      { id: "gender", label: "性别", text: "男", x: 0.25, y: 0.45 },
+      { id: "nation", label: "民族", text: "汉", x: 0.50, y: 0.45 },
+      { id: "birth", label: "出生日期", text: "1990年01月01日", x: 0.25, y: 0.55 },
+      { id: "address", label: "住址", text: "北京市朝阳区某某街道\n某某小区某某号楼某某单元", x: 0.25, y: 0.65, multiline: true },
+      { id: "idcard", label: "身份证号码", text: "110101199001011234", x: 0.25, y: 0.80 },
+    ]
+  },
+  idcard_back: {
+    name: "身份证背面",
+    fontSize: 0.04,
+    fields: [
+      { id: "issuer", label: "签发机关", text: "北京市公安局朝阳分局", x: 0.35, y: 0.50 },
+      { id: "validity", label: "有效期限", text: "2020.01.01-2030.01.01", x: 0.35, y: 0.65 },
+    ]
+  },
+  custom: {
+    name: "自定义",
+    fontSize: 0.04,
+    fields: [
+      { id: "name", label: "姓名", text: "张三", x: 0.15, y: 0.20 },
+      { id: "gender", label: "性别", text: "男", x: 0.15, y: 0.30 },
+      { id: "nation", label: "民族", text: "汉", x: 0.15, y: 0.40 },
+      { id: "birth", label: "出生日期", text: "1990年01月01日", x: 0.15, y: 0.50 },
+      { id: "idcard", label: "身份证号码", text: "110101199001011234", x: 0.15, y: 0.60 },
+      { id: "address", label: "住址", text: "北京市朝阳区某某街道\n某某小区某某号楼某某单元", x: 0.15, y: 0.70, multiline: true },
+      { id: "issuer", label: "签发机关", text: "北京市公安局朝阳分局", x: 0.15, y: 0.80 },
+      { id: "validity", label: "有效期限", text: "2020.01.01-2030.01.01", x: 0.15, y: 0.90 },
+    ]
+  }
+};
+
+// 证件编辑器配置
+const editorConfig = ref({
+  fontSize: 36,
+  fontColor: "#000000",
+  fontFamily: "SimSun",
+  backgroundColor: "#ffffff",
+});
+
+const selectedTemplate = ref("idcard_front");
+
+const textFields = ref([
+  { id: "name", label: "姓名", text: "", x: 100, y: 100 },
+  { id: "gender", label: "性别", text: "男", x: 100, y: 140 },
+  { id: "nation", label: "民族", text: "", x: 100, y: 180 },
+  { id: "birth", label: "出生日期", text: "", x: 100, y: 220 },
+  { id: "idcard", label: "身份证号码", text: "", x: 100, y: 260 },
+  { id: "address", label: "住址", text: "", x: 100, y: 300 },
+  { id: "issuer", label: "签发机关", text: "", x: 100, y: 340 },
+  { id: "validity", label: "有效期限", text: "", x: 100, y: 380 },
+]);
+
+const canvasRef = ref(null);
+const backgroundImage = ref(null);
+const isDragging = ref(false);
+const selectedField = ref(null);
+const dragOffset = ref({ x: 0, y: 0 });
+
+// 预设证件图片模板列表
+const presetTemplates = ref([
+  { value: 'sfz1.jpg', label: '身份证正面模板1' },
+  { value: 'sfz2.jpg', label: '身份证正面模板2' }
+]);
+const selectedPresetTemplate = ref(null);
+
+// 应用模板布局
+const applyTemplate = (imgWidth, imgHeight) => {
+  const template = templates[selectedTemplate.value];
+  if (!template) return;
+
+  // 根据图片宽度计算字体大小
+  const defaultFontSize = Math.round(imgWidth * template.fontSize);
+  editorConfig.value.fontSize = defaultFontSize;
+
+  // 根据模板更新字段位置和内容
+  textFields.value = template.fields.map(field => {
+    const existingField = textFields.value.find(f => f.id === field.id);
+    return {
+      id: field.id,
+      label: field.label,
+      text: existingField?.text || field.text || "",
+      x: Math.round(imgWidth * field.x),
+      y: Math.round(imgHeight * field.y),
+      fontSize: existingField?.fontSize || null, // 每个字段独立字体大小，默认为null使用全局字体
+      multiline: field.multiline || false, // 是否支持多行
+    };
+  });
+};
+
+// 加载预设模板图片
+const loadPresetTemplate = async () => {
+  if (!selectedPresetTemplate.value) {
+    message.warning("请选择预设模板");
+    return;
+  }
+
+  try {
+    // 使用相对路径加载图片
+    const imagePath = `/src/assets/img/idcard/${selectedPresetTemplate.value}`;
+    const img = new Image();
+    img.onload = () => {
+      const canvas = canvasRef.value;
+      canvas.width = img.width;
+      canvas.height = img.height;
+      backgroundImage.value = img;
+
+      // 自动应用模板布局
+      applyTemplate(img.width, img.height);
+
+      drawCanvas();
+      message.success("预设模板加载成功");
+    };
+    img.onerror = () => {
+      message.error("预设模板加载失败");
+    };
+    img.src = imagePath;
+  } catch (error) {
+    message.error("预设模板加载失败: " + error.message);
+  }
+};
+
+// 上传图片
+const uploadImage = async () => {
+  try {
+    const file = await open({
+      multiple: false,
+      filters: [{ name: "Image", extensions: ["png", "jpg", "jpeg"] }],
+    });
+    if (file) {
+      const bytes = await readFile(file);
+      const blob = new Blob([bytes]);
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      img.onload = () => {
+        const canvas = canvasRef.value;
+        canvas.width = img.width;
+        canvas.height = img.height;
+        backgroundImage.value = img;
+
+        // 清空预设模板选中值
+        selectedPresetTemplate.value = null;
+
+        // 自动应用模板布局
+        applyTemplate(img.width, img.height);
+
+        drawCanvas();
+      };
+      img.src = url;
+      message.success("图片上传成功");
+    }
+  } catch (error) {
+    message.error("图片上传失败: " + error.message);
+  }
+};
+
+// 绘制 Canvas
+const drawCanvas = () => {
+  const canvas = canvasRef.value;
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (backgroundImage.value) {
+    ctx.drawImage(backgroundImage.value, 0, 0, canvas.width, canvas.height);
+  }
+  textFields.value.forEach((field) => {
+    if (field.text) {
+      // 优先使用字段自己的fontSize，否则使用全局fontSize
+      const fontSize = field.fontSize || editorConfig.value.fontSize;
+      ctx.font = `${fontSize}px ${editorConfig.value.fontFamily}`;
+
+      // 处理多行文本
+      if (field.multiline && field.text.includes('\n')) {
+        const lines = field.text.split('\n');
+        const lineHeight = fontSize * 1.2;
+        lines.forEach((line, index) => {
+          if (line) {
+            const textWidth = ctx.measureText(line).width;
+            const currentY = field.y + (index * lineHeight);
+            // 绘制背景矩形
+            ctx.fillStyle = editorConfig.value.backgroundColor;
+            ctx.fillRect(field.x - 2, currentY - fontSize, textWidth + 4, fontSize + 4);
+            // 绘制文本
+            ctx.fillStyle = editorConfig.value.fontColor;
+            ctx.fillText(line, field.x, currentY);
+          }
+        });
+      } else {
+        const textWidth = ctx.measureText(field.text).width;
+        // 绘制背景矩形
+        ctx.fillStyle = editorConfig.value.backgroundColor;
+        ctx.fillRect(field.x - 2, field.y - fontSize, textWidth + 4, fontSize + 4);
+        // 绘制文本
+        ctx.fillStyle = editorConfig.value.fontColor;
+        ctx.fillText(field.text, field.x, field.y);
+      }
+    }
+  });
+};
+
+// 鼠标按下
+const handleMouseDown = (e) => {
+  const canvas = canvasRef.value;
+  if (!canvas) return;
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const x = (e.clientX - rect.left) * scaleX;
+  const y = (e.clientY - rect.top) * scaleY;
+  const ctx = canvas.getContext("2d");
+  selectedField.value = textFields.value.find((field) => {
+    if (!field.text) return false;
+    ctx.font = `${editorConfig.value.fontSize}px ${editorConfig.value.fontFamily}`;
+    const textWidth = ctx.measureText(field.text).width;
+    return (
+      x >= field.x &&
+      x <= field.x + textWidth &&
+      y >= field.y - editorConfig.value.fontSize &&
+      y <= field.y
+    );
+  });
+  if (selectedField.value) {
+    isDragging.value = true;
+    dragOffset.value = { x: x - selectedField.value.x, y: y - selectedField.value.y };
+  }
+};
+
+// 鼠标移动
+const handleMouseMove = (e) => {
+  if (!isDragging.value) return;
+  const canvas = canvasRef.value;
+  if (!canvas) return;
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  selectedField.value.x = (e.clientX - rect.left) * scaleX - dragOffset.value.x;
+  selectedField.value.y = (e.clientY - rect.top) * scaleY - dragOffset.value.y;
+  drawCanvas();
+};
+
+// 鼠标释放
+const handleMouseUp = () => {
+  isDragging.value = false;
+  selectedField.value = null;
+};
+
+// 清空表单内容
+const clearForm = () => {
+  // 清空所有文本字段
+  textFields.value.forEach(field => {
+    field.text = "";
+    field.fontSize = null;
+  });
+
+  // 重置字体设置为默认值
+  editorConfig.value.fontSize = 36;
+  editorConfig.value.fontColor = "#000000";
+  editorConfig.value.fontFamily = "SimSun";
+  editorConfig.value.backgroundColor = "#ffffff";
+
+  // 重绘画布
+  drawCanvas();
+
+  message.success("已清空所有表单内容");
+};
+
+// 保存图片
+const saveImage = async () => {
+  const canvas = canvasRef.value;
+  if (!canvas || !backgroundImage.value) {
+    message.warning("请先上传图片");
+    return;
+  }
+  try {
+    const desktop = (await homeDir()) + "Desktop/";
+    const timestamp = new Date()
+      .toISOString()
+      .replace(/[:.]/g, "-")
+      .slice(0, -5);
+    const filePath = await save({
+      defaultPath: `${desktop}身份证_${timestamp}.png`,
+      filters: [{ name: "Image", extensions: ["png"] }],
+    });
+    if (filePath) {
+      canvas.toBlob(async (blob) => {
+        const arrayBuffer = await blob.arrayBuffer();
+        const bytes = new Uint8Array(arrayBuffer);
+        await writeFile(filePath, bytes);
+        message.success("图片已保存到桌面");
+      }, "image/png");
+    }
+  } catch (error) {
+    message.error("保存失败: " + error.message);
+  }
+};
 </script>
 
 <template>
@@ -434,6 +738,14 @@ const countOptions = computed(() => {
             >
               <GlobalOutlined />
               <span>永久居留证</span>
+            </div>
+            <div
+              class="nav-item"
+              :class="{ active: activeTab === 'editor' }"
+              @click="activeTab = 'editor'"
+            >
+              <PictureOutlined />
+              <span>证件编辑器</span>
             </div>
           </div>
 
@@ -637,7 +949,7 @@ const countOptions = computed(() => {
                 <a-row :gutter="12">
                   <a-col :span="24">
                     <a-form-item
-                      label="来源地 (前6位固定: 香港810000 澳门820000 台湾830000)"
+                      label=""
                     >
                       <a-radio-group
                         v-model:value="residenceConfig.type"
@@ -719,8 +1031,90 @@ const countOptions = computed(() => {
               </a-form>
             </div>
 
+            <div class="config-panel" v-if="activeTab === 'editor'">
+              <a-form layout="vertical" class="config-form">
+                <a-form-item>
+                  <a-button type="primary" @click="uploadImage" block>
+                    <template #icon><UploadOutlined /></template>
+                    上传证件图片
+                  </a-button>
+                </a-form-item>
+                <a-form-item label="预设模板">
+                  <a-select
+                    v-model:value="selectedPresetTemplate"
+                    :options="presetTemplates"
+                    placeholder="选择预设证件图片模板"
+                    @change="loadPresetTemplate"
+                    style="width: 100%"
+                  />
+                </a-form-item>
+                <a-divider style="margin: 16px 0" />
+                <div v-for="field in textFields" :key="field.id" style="margin-bottom: 16px;">
+                  <a-form-item :label="field.label">
+                    <div style="display: flex; gap: 8px; align-items: flex-start;">
+                      <a-textarea
+                        v-if="field.multiline"
+                        v-model:value="field.text"
+                        @input="drawCanvas"
+                        :rows="2"
+                        style="flex: 1;"
+                      />
+                      <a-input
+                        v-else
+                        v-model:value="field.text"
+                        @input="drawCanvas"
+                        style="flex: 1;"
+                      />
+                      <a-input-number
+                        v-model:value="field.fontSize"
+                        :min="12"
+                        :max="100"
+                        :step="1"
+                        @change="drawCanvas"
+                        style="width: 80px;"
+                        placeholder="字号"
+                      />
+                    </div>
+                  </a-form-item>
+                </div>
+                <a-divider style="margin: 16px 0">字体设置</a-divider>
+                <a-row :gutter="12">
+                  <a-col :span="8">
+                    <a-form-item label="字体大小">
+                      <a-slider v-model:value="editorConfig.fontSize" :min="12" :max="48" @change="drawCanvas" />
+                    </a-form-item>
+                  </a-col>
+                  <a-col :span="8">
+                    <a-form-item label="字体颜色">
+                      <input type="color" v-model="editorConfig.fontColor" @input="drawCanvas" style="width: 100%; height: 32px; border: 1px solid #d9d9d9; border-radius: 6px;" />
+                    </a-form-item>
+                  </a-col>
+                  <a-col :span="8">
+                    <a-form-item label="背景颜色">
+                      <input type="color" v-model="editorConfig.backgroundColor" @input="drawCanvas" style="width: 100%; height: 32px; border: 1px solid #d9d9d9; border-radius: 6px;" />
+                    </a-form-item>
+                  </a-col>
+                </a-row>
+                <a-divider style="margin: 16px 0" />
+                <a-form-item>
+                  <a-popconfirm
+                    title="确定要清空所有表单内容吗？"
+                    ok-text="确定"
+                    cancel-text="取消"
+                    @confirm="clearForm"
+                  >
+                    <a-button danger block>
+                      <template #icon><DeleteOutlined /></template>
+                      一键清空表单
+                    </a-button>
+                  </a-popconfirm>
+                </a-form-item>
+              </a-form>
+            </div>
+
             <div class="action-bar">
               <a-button
+                v-if="activeTab !== 'editor'"
                 type="primary"
                 size="large"
                 @click="handleGenerate"
@@ -731,25 +1125,39 @@ const countOptions = computed(() => {
                 <template #icon><ReloadOutlined /></template>
                 立即生成
               </a-button>
+              <a-button
+                v-else
+                type="primary"
+                size="large"
+                @click="saveImage"
+                block
+                class="generate-btn"
+              >
+                <template #icon><DownloadOutlined /></template>
+                保存到桌面
+              </a-button>
             </div>
           </div>
         </div>
 
         <div class="right-panel">
           <div class="results-header">
-            <span class="results-title"
-              >生成结果
-              <span class="count-badge" v-if="results.length">{{
-                results.length
-              }}</span>
-              <a-tag
-                v-if="results.length"
-                color="blue"
-                style="margin-left: 8px"
-                >{{ results[0].type }}</a-tag
-              ></span
-            >
-            <div class="header-actions" v-if="results.length">
+            <span class="results-title">
+              <template v-if="activeTab === 'editor'">证件预览</template>
+              <template v-else>
+                生成结果
+                <span class="count-badge" v-if="results.length">{{
+                  results.length
+                }}</span>
+                <a-tag
+                  v-if="results.length"
+                  color="blue"
+                  style="margin-left: 8px"
+                  >{{ results[0].type }}</a-tag
+                >
+              </template>
+            </span>
+            <div class="header-actions" v-if="results.length && activeTab !== 'editor'">
               <a-button size="small" @click="exportToTxt">
                 <template #icon><DownloadOutlined /></template>
                 导出TXT
@@ -766,11 +1174,27 @@ const countOptions = computed(() => {
           </div>
 
           <div class="results-scroll-area">
+            <div v-if="activeTab === 'editor'" class="canvas-container">
+              <canvas
+                ref="canvasRef"
+                @mousedown="handleMouseDown"
+                @mousemove="handleMouseMove"
+                @mouseup="handleMouseUp"
+                style="max-width: 100%; cursor: move; border: 1px solid #e0e0e0; border-radius: 8px;"
+              ></canvas>
+              <div v-if="!backgroundImage" class="empty-state">
+                <div class="empty-icon-wrapper">
+                  <PictureOutlined />
+                </div>
+                <h3>等待上传</h3>
+                <p>请点击左侧"上传证件图片"按钮</p>
+              </div>
+            </div>
             <TransitionGroup
+              v-else-if="results.length > 0"
               name="list"
               tag="div"
               class="results-list"
-              v-if="results.length > 0"
             >
               <div v-for="item in results" :key="item.id" class="result-item">
                 <div class="result-content">
@@ -952,7 +1376,7 @@ const countOptions = computed(() => {
 }
 
 .action-bar {
-  margin-top: 24px;
+  /* margin-top: 24px; */
   padding-top: 16px;
   border-top: 1px solid var(--border-color);
 }
@@ -1023,6 +1447,19 @@ const countOptions = computed(() => {
   overflow-y: auto;
   padding: 20px;
   background: #f8fafc;
+}
+
+/* Canvas Container */
+.canvas-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+}
+
+.canvas-container canvas {
+  display: block;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 /* Result List */

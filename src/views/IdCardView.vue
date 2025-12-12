@@ -447,6 +447,7 @@ const textFields = ref([
 ]);
 
 const canvasRef = ref(null);
+const canvasSize = ref({ width: 0, height: 0 });
 const backgroundImage = ref(null);
 const isDragging = ref(false);
 const selectedField = ref(null);
@@ -511,6 +512,7 @@ const loadPresetTemplate = async () => {
       if (canvas) {
         canvas.width = img.width;
         canvas.height = img.height;
+        canvasSize.value = { width: img.width, height: img.height };
         applyTemplate(img.width, img.height);
         drawCanvas();
         message.success("预设模板加载成功");
@@ -585,6 +587,7 @@ const uploadImage = async () => {
         if (canvas) {
           canvas.width = img.width;
           canvas.height = img.height;
+          canvasSize.value = { width: img.width, height: img.height };
 
           // 清空预设模板选中值
           selectedPresetTemplate.value = null;
@@ -976,7 +979,12 @@ watch(selectedField, (newVal) => {
 watch(activeTab, async (val) => {
   if (val === 'editor') {
     await nextTick();
-    if (backgroundImage.value) {
+    if (backgroundImage.value && canvasRef.value) {
+      const canvas = canvasRef.value;
+      if (canvasSize.value.width > 0 && canvasSize.value.height > 0) {
+        canvas.width = canvasSize.value.width;
+        canvas.height = canvasSize.value.height;
+      }
       drawCanvas();
     }
   } else {
@@ -1514,7 +1522,7 @@ watch(activeTab, async (val) => {
           <div class="results-scroll-area">
             <div v-if="activeTab === 'editor'" class="canvas-container">
               <canvas
-                v-if="backgroundImage"
+                v-show="backgroundImage"
                 ref="canvasRef"
                 @mousedown="handleMouseDown"
                 @mousemove="handleMouseMove"

@@ -379,6 +379,290 @@
             </div>
           </a-tab-pane>
 
+          <a-tab-pane key="api">
+            <template #tab>
+              <span class="tab-label">
+                <ApiOutlined />
+                API 模式
+              </span>
+            </template>
+
+            <div class="config-content">
+              <div style="display: flex; flex-direction: column; gap: 12px">
+                <div style="display: flex; gap: 8px; align-items: center">
+                  <a-select v-model:value="apiMode.method" style="width: 120px">
+                    <a-select-option value="GET">GET</a-select-option>
+                    <a-select-option value="POST">POST</a-select-option>
+                  </a-select>
+                  <a-input v-model:value="apiMode.url" placeholder="接口 URL (https://...)" />
+                  <a-button type="primary" :loading="apiLoading" @click="runApiRequest">
+                    请求
+                  </a-button>
+                </div>
+
+                <div style="display: flex; gap: 8px; align-items: center">
+                  <a-input v-model:value="apiMode.dataPath" placeholder="数据路径 (可选，例如 data.list 或 result.items)" />
+                  <a-tag v-if="apiResponseStatus" color="blue">
+                    {{ apiResponseStatus }} {{ apiResponseStatusText }} ({{ apiResponseTimeMs }}ms)
+                  </a-tag>
+                </div>
+
+                <div>
+                  <div style="font-weight: 600; margin-bottom: 6px">Headers</div>
+                  <div v-for="(h, idx) in apiMode.headers" :key="idx" style="display: flex; gap: 8px; align-items: center; margin-bottom: 6px">
+                    <a-input v-model:value="h.key" placeholder="Key" />
+                    <a-input v-model:value="h.value" placeholder="Value" />
+                    <a-button type="text" danger @click="removeApiHeader(idx)">
+                      <DeleteOutlined />
+                    </a-button>
+                  </div>
+                  <a-button type="dashed" block @click="addApiHeader">
+                    <PlusOutlined /> 添加 Header
+                  </a-button>
+                </div>
+
+                <div v-if="apiMode.method !== 'GET'" style="display: flex; flex-direction: column; gap: 6px">
+                  <div style="font-weight: 600">Body</div>
+                  <a-textarea v-model:value="apiMode.body" :auto-size="{ minRows: 4, maxRows: 10 }" placeholder='请求体（建议 JSON 字符串）' />
+                </div>
+
+                <div>
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px">
+                    <div style="font-weight: 600">字段映射（name/path）</div>
+                    <a-button size="small" @click="addExtractField">
+                      <PlusOutlined /> 添加
+                    </a-button>
+                  </div>
+                  <div v-if="apiMode.extract.length === 0" style="color: #94a3b8">暂无映射，默认直接输出 dataPath 对应的数据</div>
+                  <div v-for="(m, idx) in apiMode.extract" :key="idx" style="display: flex; gap: 8px; align-items: center; margin-bottom: 6px">
+                    <a-input v-model:value="m.name" placeholder="字段名" style="width: 160px" />
+                    <a-input v-model:value="m.path" placeholder="路径（例如 title 或 item.title 或 a.b[0].c）" />
+                    <a-button type="text" danger @click="removeExtractField(idx)">
+                      <DeleteOutlined />
+                    </a-button>
+                  </div>
+                </div>
+
+                <div>
+                  <div style="font-weight: 600; margin-bottom: 6px">提取结果预览</div>
+                  <div v-if="apiResponseError" style="color: #ef4444; white-space: pre-wrap">{{ apiResponseError }}</div>
+                  <div v-else-if="!apiHasExtracted" style="color: #94a3b8">暂无数据</div>
+                  <pre v-else style="margin: 0; max-height: 420px; overflow: auto">{{ apiExtractedJson }}</pre>
+                </div>
+
+                <div>
+                  <div style="font-weight: 600; margin-bottom: 6px">原始响应</div>
+                  <pre style="margin: 0; max-height: 260px; overflow: auto">{{ apiResponseText }}</pre>
+                </div>
+              </div>
+            </div>
+          </a-tab-pane>
+
+          <a-tab-pane key="novel">
+            <template #tab>
+              <span class="tab-label">
+                <BookOutlined />
+                小说爬虫
+              </span>
+            </template>
+
+            <div class="config-content task-tab-content">
+              <div class="task-section">
+                <a-alert
+                  type="info"
+                  show-icon
+                  message="小说爬虫：目录解析 -> 导出"
+                  description="这个页面专注抓小说：解析目录后直接导出（title/content/url），由后端抓取生成文件，速度快且不卡顿。"
+                />
+                <div class="task-actions-row" style="margin-top: 10px">
+                  <a-tag color="blue">待抓取: {{ novelCrawlQueueRemaining }}</a-tag>
+                  <a-tag color="green">已抓取: {{ novelCrawlResultsCount }}</a-tag>
+                  <a-tag v-if="novelCrawlRunning" color="gold">运行中</a-tag>
+                </div>
+              </div>
+
+              <div class="task-section">
+                <div class="task-section-title">目录解析（小说章节）</div>
+                <div style="display: flex; flex-direction: column; gap: 10px">
+                  <div style="display: flex; gap: 8px; align-items: center">
+                    <a-input v-model:value="directoryUrl" placeholder="目录页 URL (https://...)" />
+                    <a-button size="small" @click="directoryUrl = targetUrl" :disabled="!targetUrl">
+                      使用当前 URL
+                    </a-button>
+                  </div>
+                  <div style="display: flex; gap: 8px; align-items: center">
+                    <a-input v-model:value="novelLinkSelector" placeholder="章节链接选择器 (例如 .chapter-list a)" />
+                    <a-select v-model:value="novelLinkAttr" style="width: 140px">
+                      <a-select-option value="href">href</a-select-option>
+                      <a-select-option value="data-href">data-href</a-select-option>
+                      <a-select-option value="text">text</a-select-option>
+                    </a-select>
+                    <a-input-number v-model:value="novelMaxItems" :min="1" :max="5000" style="width: 140px" />
+                  </div>
+                  <div style="display: flex; gap: 8px; align-items: center">
+                    <a-switch v-model:checked="novelSameDomainOnly" />
+                    <span style="color: #64748b">仅同域</span>
+                    <a-input v-model:value="novelIncludePattern" placeholder="包含正则(可选)" />
+                    <a-input v-model:value="novelExcludePattern" placeholder="排除正则(可选)" />
+                  </div>
+
+                  <div style="display: flex; gap: 8px">
+                    <a-button type="primary" :loading="novelParsing" :disabled="!novelCanParse" @click="parseNovelDirectory">
+                      解析目录
+                    </a-button>
+                    <a-tag color="blue">{{ novelChapters.length }} 条</a-tag>
+                  </div>
+
+                  <div v-if="novelParseError" style="color: #ef4444; white-space: pre-wrap">{{ novelParseError }}</div>
+                  <a-list
+                    size="small"
+                    bordered
+                    :data-source="novelChapters.slice(0, 50)"
+                    :locale="{ emptyText: '暂无解析结果（最多展示前 50 条）' }"
+                  >
+                    <template #renderItem="{ item }">
+                      <a-list-item>
+                        <div style="display: flex; flex-direction: column; gap: 2px; width: 100%">
+                          <div style="font-weight: 600">{{ item.title || '—' }}</div>
+                          <div style="color: #64748b; font-size: 12px; word-break: break-all">{{ item.url }}</div>
+                        </div>
+                      </a-list-item>
+                    </template>
+                  </a-list>
+                </div>
+              </div>
+
+              <div class="task-section">
+                <div class="task-section-title">抓取规则（章节页）</div>
+                <div style="display: flex; flex-direction: column; gap: 10px">
+                  <div style="display: flex; gap: 8px; align-items: center">
+                    <div style="width: 110px; color: #64748b">标题选择器</div>
+                    <a-input v-model:value="novelTitleSelector" placeholder="例如 h1" />
+                  </div>
+                  <div style="display: flex; gap: 8px; align-items: center">
+                    <div style="width: 110px; color: #64748b">正文选择器</div>
+                    <a-input v-model:value="novelContentSelector" placeholder="例如 #content" />
+                  </div>
+
+                  <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap">
+                    <a-switch v-model:checked="novelExportIncludeUrlLine" />
+                    <span style="color: #64748b">导出附带 URL</span>
+                  </div>
+
+                  <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap">
+                    <a-switch v-model:checked="novelCleanEnabled" />
+                    <span style="color: #64748b">启用自定义清洗正则</span>
+                  </div>
+
+                  <a-textarea
+                    v-model:value="novelCleanRegexText"
+                    :disabled="!novelCleanEnabled"
+                    placeholder="每行一个正则（匹配到的内容会被删除），例如：\napp2\\(\\);\nread2\\(\\);\nchaptererror\\(\\);"
+                    :auto-size="{ minRows: 3, maxRows: 8 }"
+                  />
+                </div>
+              </div>
+
+              <div class="task-section">
+                <div class="task-section-title">执行</div>
+                <div style="display: flex; flex-direction: column; gap: 10px">
+                  <div class="task-grid">
+                    <div class="task-grid-item">
+                      <div class="task-label">并发</div>
+                      <a-input-number v-model:value="novelCrawlConcurrency" :min="1" :max="8" style="width: 100%" />
+                    </div>
+                    <div class="task-grid-item">
+                      <div class="task-label">间隔(ms)</div>
+                      <a-input-number v-model:value="novelCrawlDelayMs" :min="0" :max="30000" style="width: 100%" />
+                    </div>
+                    <div class="task-grid-item">
+                      <div class="task-label">重试</div>
+                      <a-input-number v-model:value="novelCrawlRetry" :min="0" :max="10" style="width: 100%" />
+                    </div>
+                    <div class="task-grid-item">
+                      <div class="task-label">最大章节</div>
+                      <a-input-number v-model:value="novelCrawlMaxPages" :min="1" :max="20000" style="width: 100%" />
+                    </div>
+                  </div>
+
+                  <div class="task-actions-row">
+                    <a-button danger :disabled="!novelCrawlRunning" @click="cancelNovelExport">
+                      <StopOutlined /> 停止
+                    </a-button>
+                    <a-button :disabled="novelCrawlRunning" @click="novelCrawlFailures = []; novelCrawlLogs = []; novelCrawlLogsText = ''">
+                      <DeleteOutlined /> 清空日志
+                    </a-button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="task-section">
+                <div class="task-section-title">导出</div>
+                <div style="display: flex; flex-direction: column; gap: 10px">
+                  <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap">
+                    <div style="width: 120px; color: #64748b">JSON 字段名</div>
+                    <a-input v-model:value="novelJsonKeyTitle" style="width: 140px" placeholder="title 字段" />
+                    <a-input v-model:value="novelJsonKeyContent" style="width: 140px" placeholder="content 字段" />
+                    <a-input v-model:value="novelJsonKeyUrl" style="width: 140px" placeholder="url 字段" />
+                  </div>
+                  <div style="display: flex; gap: 8px">
+                    <a-button type="primary" :disabled="novelChapters.length === 0 || novelCrawlRunning" @click="exportNovelCrawlerTxt">
+                      导出 TXT
+                    </a-button>
+                    <a-button :disabled="novelChapters.length === 0 || novelCrawlRunning" @click="exportNovelCrawlerJson">
+                      导出 JSON
+                    </a-button>
+                    <a-tag color="blue">已抓取章节: {{ novelCrawlResultsCount }}</a-tag>
+                  </div>
+                </div>
+              </div>
+
+              <div class="task-section">
+                <div class="task-section-title">失败与日志</div>
+                <div class="task-actions-row" style="margin-bottom: 10px">
+                  <a-button
+                    size="small"
+                    :disabled="novelCrawlFailures.length === 0"
+                    @click="downloadFile('novel-failures.json', JSON.stringify(novelCrawlFailures, null, 2))"
+                  >
+                    <DownloadOutlined /> 导出失败
+                  </a-button>
+                  <a-button size="small" danger :disabled="novelCrawlFailures.length === 0" @click="novelCrawlFailures = []">
+                    <DeleteOutlined /> 清空失败
+                  </a-button>
+                  <a-button size="small" danger :disabled="novelCrawlLogs.length === 0" @click="novelCrawlLogs = []; novelCrawlLogsText = ''">
+                    <DeleteOutlined /> 清空日志
+                  </a-button>
+                  <a-tag v-if="novelCrawlFailures.length" color="red">失败: {{ novelCrawlFailures.length }}</a-tag>
+                </div>
+
+                <div v-if="novelCrawlFailures.length" style="margin-bottom: 10px">
+                  <a-list
+                    size="small"
+                    bordered
+                    :data-source="novelCrawlFailures.slice(0, 20)"
+                    :locale="{ emptyText: '暂无失败记录' }"
+                  >
+                    <template #renderItem="{ item }">
+                      <a-list-item>
+                        <div style="display: flex; flex-direction: column; gap: 2px; width: 100%">
+                          <div style="font-weight: 600">{{ item.time }} - {{ item.error }}</div>
+                          <div style="color: #64748b; font-size: 12px; word-break: break-all">{{ item.url }}</div>
+                        </div>
+                      </a-list-item>
+                    </template>
+                  </a-list>
+                </div>
+
+                <a-textarea
+                  :value="novelCrawlLogsText"
+                  readonly
+                  :auto-size="{ minRows: 6, maxRows: 12 }"
+                />
+              </div>
+            </div>
+          </a-tab-pane>
+
           <a-tab-pane key="task">
             <template #tab>
               <span class="tab-label">
@@ -755,7 +1039,15 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import { message } from 'ant-design-vue';
-import { 
+import { useScraperPreview } from '../composables/scraper/useScraperPreview';
+import { useScraperInspector } from '../composables/scraper/useScraperInspector';
+import { useScraperCrawlTask } from '../composables/scraper/useScraperCrawlTask';
+import { useScraperCodegen } from '../composables/scraper/useScraperCodegen';
+import { useScraperConfigStorage } from '../composables/scraper/useScraperConfigStorage';
+import { useScraperApiMode } from '../composables/scraper/useScraperApiMode';
+import { useScraperNovelDirectory } from '../composables/scraper/useScraperNovelDirectory';
+import { buildHeadersObject, downloadFile, normalizedUrl, sleep } from '../composables/scraper/utils';
+import {
   GlobalOutlined, 
   AimOutlined, 
   CodeOutlined, 
@@ -777,13 +1069,15 @@ import {
   LinkOutlined,
   ReloadOutlined,
   DownOutlined,
-  PlayCircleOutlined,
   StopOutlined,
   ArrowUpOutlined,
   ArrowDownOutlined,
-  QuestionCircleOutlined
+  QuestionCircleOutlined,
+  ApiOutlined,
+  BookOutlined
 } from '@ant-design/icons-vue';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeTextFile } from '@tauri-apps/plugin-fs';
 
@@ -799,10 +1093,124 @@ const isInspectorActive = ref(false);
 const isMobileView = ref(false);
 const activeTab = ref('fields');
 
-// --- URL History ---
-const urlHistory = ref([]);
-const URL_HISTORY_KEY = 'scraper:urlHistory:v1';
-const MAX_URL_HISTORY = 20;
+const novelTitleSelector = ref('h1');
+const novelContentSelector = ref('#content');
+const novelExportIncludeUrlLine = ref(false);
+
+const novelJsonKeyTitle = ref('title');
+const novelJsonKeyContent = ref('content');
+const novelJsonKeyUrl = ref('url');
+
+const novelCleanEnabled = ref(false);
+const novelCleanRegexText = ref('app2\\(\\);\nread2\\(\\);\nchaptererror\\(\\);');
+
+const novelCrawlResultsCount = ref(0);
+const novelCrawlRunning = ref(false);
+const novelCrawlProcessed = ref(0);
+const novelCrawlQueueRemaining = ref(0);
+const novelCrawlMaxPages = ref(5000);
+const novelCrawlConcurrency = ref(3);
+const novelCrawlDelayMs = ref(300);
+const novelCrawlRetry = ref(1);
+const novelCrawlFailures = ref([]);
+const novelCrawlLogs = ref([]);
+const novelCrawlLogsText = ref('');
+
+const novelCrawlCurrentRunId = ref(0);
+
+let unlistenNovelCrawlProgress = null;
+let unlistenNovelCrawlFinished = null;
+
+let novelProgressLogLastTs = 0;
+let novelProgressLogLastProcessed = 0;
+
+const pushNovelCrawlLog = (text) => {
+  const line = `[${new Date().toLocaleTimeString()}] ${text}`;
+  novelCrawlLogs.value.push(line);
+  if (novelCrawlLogs.value.length > 500) {
+    novelCrawlLogs.value.splice(0, novelCrawlLogs.value.length - 500);
+  }
+  novelCrawlLogsText.value = novelCrawlLogs.value.slice(-200).join('\n');
+};
+
+const ensureNovelCrawlListeners = async () => {
+  if (unlistenNovelCrawlProgress || unlistenNovelCrawlFinished) return;
+
+  unlistenNovelCrawlProgress = await listen('novel-crawl-progress', (event) => {
+    const p = event?.payload || {};
+    if (typeof p.processed === 'number') novelCrawlProcessed.value = p.processed;
+    if (typeof p.succeeded === 'number') novelCrawlResultsCount.value = p.succeeded;
+    if (typeof p.total === 'number') {
+      novelCrawlQueueRemaining.value = Math.max(0, p.total - (p.processed || 0));
+    }
+
+    const now = Date.now();
+    const processed = Number(p.processed || 0);
+    const total = Number(p.total || 0);
+    const isFailed = p.message === 'failed' || (typeof p.error === 'string' && !!p.error);
+    const shouldLog =
+      isFailed ||
+      (p.url && (now - novelProgressLogLastTs > 800 || processed - novelProgressLogLastProcessed >= 10));
+
+    if (shouldLog) {
+      novelProgressLogLastTs = now;
+      novelProgressLogLastProcessed = processed;
+      if (p.url) pushNovelCrawlLog(`进度: ${processed}/${total} ${p.url}`);
+      if (isFailed) {
+        if (p.url) {
+          novelCrawlFailures.value.push({
+            id: `${Date.now()}_${Math.random().toString(16).slice(2)}`,
+            time: new Date().toLocaleTimeString(),
+            url: String(p.url),
+            error: String(p.error || 'unknown')
+          });
+        }
+        pushNovelCrawlLog(`失败: ${String(p.url || '')} ${String(p.error || 'unknown')}`.trim());
+      }
+    }
+  });
+
+  unlistenNovelCrawlFinished = await listen('novel-crawl-finished', (event) => {
+    const p = event?.payload || {};
+    novelCrawlRunning.value = false;
+    novelCrawlCurrentRunId.value = 0;
+    if (typeof p.processed === 'number') novelCrawlProcessed.value = p.processed;
+    if (typeof p.succeeded === 'number') novelCrawlResultsCount.value = p.succeeded;
+    if (typeof p.total === 'number') {
+      novelCrawlQueueRemaining.value = Math.max(0, p.total - (p.processed || 0));
+    }
+    if (p.canceled) {
+      pushNovelCrawlLog('导出任务已停止');
+    } else {
+      pushNovelCrawlLog('导出任务结束');
+    }
+  });
+};
+
+const cancelNovelExport = async () => {
+  const rid = Number(novelCrawlCurrentRunId.value || 0);
+  if (!rid) {
+    message.info('当前没有可停止的任务');
+    return;
+  }
+  try {
+    await invoke('novel_crawl_cancel', { runId: rid });
+    pushNovelCrawlLog(`已请求停止任务: ${rid}`);
+  } catch (_) {
+    message.error('停止失败');
+  }
+};
+
+const apiMode = ref({
+  enabled: false,
+  method: 'GET',
+  url: '',
+  dataPath: '',
+  headers: [],
+  body: '',
+  extract: [],
+  pagination: { type: 'none' }
+});
 
 // --- Advanced Settings ---
 const settingsVisible = ref(false);
@@ -845,6 +1253,71 @@ const triggerFieldFlash = (index) => {
   }, 1000);
 };
 
+const {
+  previewResult,
+  hasPreviewData,
+  previewCountText,
+  previewDataJson,
+  fieldSampleText,
+  refreshPreview,
+  scheduleRefreshPreview,
+  copyPreviewData,
+  exportData,
+  detectListSelector,
+  getParsedDoc,
+  extractValue,
+  fieldDiagnostics,
+  fieldDiagnosticText,
+  fieldDiagnosticColor,
+  disposePreview
+} = useScraperPreview({
+  rawHtml,
+  processedHtml,
+  targetUrl,
+  fields,
+  listMode,
+  listSelector,
+  messageApi: message
+});
+
+const {
+  loading: apiLoading,
+  responseStatus: apiResponseStatus,
+  responseStatusText: apiResponseStatusText,
+  responseText: apiResponseText,
+  responseError: apiResponseError,
+  responseTimeMs: apiResponseTimeMs,
+  extractedJson: apiExtractedJson,
+  hasExtracted: apiHasExtracted,
+  runRequest: runApiRequest,
+  addApiHeader,
+  removeApiHeader,
+  addExtractField,
+  removeExtractField
+} = useScraperApiMode({
+  apiMode,
+  messageApi: message
+});
+
+const {
+  injectInspectorScript,
+  highlightSelectorInPreview,
+  handleMessage: handleInspectorMessage
+} = useScraperInspector({
+  rawHtml,
+  processedHtml,
+  previewFrame,
+  isInspectorActive,
+  fields,
+  currentFieldIndex,
+  autoAdvanceOnPick,
+  autoExitOnPick,
+  getParsedDoc,
+  scheduleRefreshPreview,
+  triggerFieldFlash,
+  messageApi: message
+});
+
 const scrollToField = async (index) => {
   await nextTick();
   const el = document.querySelector(`.field-card[data-index="${index}"]`);
@@ -860,15 +1333,23 @@ watch(currentFieldIndex, (newVal) => {
 const codeModalVisible = ref(false);
 const codeLanguage = ref('node');
 
-const helpModalVisible = ref(false);
+const {
+  generatedCode,
+  showCodeModal,
+  copyCode,
+  downloadCode
+} = useScraperCodegen({
+  targetUrl,
+  fields,
+  listMode,
+  listSelector,
+  requestHeaders,
+  codeLanguage,
+  codeModalVisible,
+  messageApi: message
+});
 
-const templateModalVisible = ref(false);
-const templateModalMode = ref('save');
-const templateNameInput = ref('');
-const selectedTemplateId = ref('');
-const templates = ref([]);
-const TEMPLATES_KEY = 'scraper:templates:v1';
-const LAST_CONFIG_KEY = 'scraper:lastConfig:v2';
+const helpModalVisible = ref(false);
 
 const startUrlsText = ref('');
 const crawlQueue = ref([]);
@@ -895,87 +1376,266 @@ const crawlDedupEnabled = ref(true);
 const crawlDedupKey = ref('__url');
 const crawlClearOnStart = ref(false);
 
-const loadUrlHistory = () => {
-  try {
-    const raw = localStorage.getItem(URL_HISTORY_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    urlHistory.value = Array.isArray(parsed) ? parsed.filter(Boolean) : [];
-  } catch (e) {
-    urlHistory.value = [];
-  }
-};
+const {
+  urlHistory,
+  urlHistoryOptions,
+  loadUrlHistory,
+  addToHistory,
+  clearUrlHistory,
+  onSelectHistoryUrl,
 
-const saveUrlHistory = () => {
-  try {
-    localStorage.setItem(URL_HISTORY_KEY, JSON.stringify(urlHistory.value.slice(0, MAX_URL_HISTORY)));
-  } catch (e) {
-    // ignore
-  }
-};
+  templates,
+  templateModalVisible,
+  templateModalMode,
+  templateNameInput,
+  selectedTemplateId,
+  templateOptions,
+  loadTemplates,
+  openSaveTemplate,
+  openLoadTemplate,
+  confirmSaveTemplate,
+  confirmLoadTemplate,
+  deleteSelectedTemplate,
 
-const normalizedUrl = (input) => {
-  const str = (input || '').trim();
-  if (!str) return '';
-  if (str.startsWith('http://') || str.startsWith('https://')) return str;
-  return 'https://' + str;
-};
+  fileInput,
+  exportRules,
+  triggerImport,
+  importRules,
 
-const safeResolveUrl = (baseUrl, maybeUrl) => {
-  const raw = (maybeUrl || '').trim();
-  if (!raw) return raw;
-  try {
-    return new URL(raw, baseUrl).toString();
-  } catch (_) {
-    return raw;
-  }
-};
+  loadLastConfig,
+  disposeStorage
+} = useScraperConfigStorage({
+  targetUrl,
+  requestMethod,
+  fields,
+  listMode,
+  listSelector,
+  requestHeaders,
+  requestTimeout,
+  proxyUrl,
+  acceptInvalidCerts,
+  autoExitOnPick,
+  autoAdvanceOnPick,
+  startUrlsText,
+  crawlMaxPages,
+  crawlConcurrency,
+  crawlDelayMs,
+  crawlRetry,
+  discoverLinksSelector,
+  discoverLinksAttr,
+  discoverLinksCustomAttr,
+  nextPageSelector,
+  nextPageAttr,
+  nextPageCustomAttr,
+  crawlDedupEnabled,
+  crawlDedupKey,
+  crawlClearOnStart,
+  apiMode,
+  onConfigApplied: () => {
+    scheduleRefreshPreview();
+  },
+  messageApi: message
+});
 
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, Math.max(0, ms || 0)));
-
-const pushCrawlLog = (text) => {
-  const line = `[${new Date().toLocaleTimeString()}] ${text}`;
-  crawlLogs.value.push(line);
-  if (crawlLogs.value.length > 500) crawlLogs.value.splice(0, crawlLogs.value.length - 500);
-};
-
-const clearCrawlLogs = () => {
-  crawlLogs.value = [];
-};
-
-const clearCrawlFailures = () => {
-  crawlFailures.value = [];
-};
-
-const exportCrawlFailures = () => {
-  if (!crawlFailures.value.length) return;
-  downloadFile('crawl-failures.json', JSON.stringify(crawlFailures.value, null, 2));
+const buildRequestHeadersObject = () => {
+  return buildHeadersObject(requestHeaders.value);
 };
 
 const canFetch = computed(() => {
   return !loading.value && !!(targetUrl.value || '').trim();
 });
 
-const crawlFailureColumns = computed(() => {
-  return [
-    { title: '时间', dataIndex: 'time', key: 'time', width: 110 },
-    { title: 'URL', dataIndex: 'url', key: 'url' },
-    { title: '错误', dataIndex: 'error', key: 'error' }
-  ];
+
+const {
+  clearCrawlLogs,
+  clearCrawlFailures,
+  exportCrawlFailures,
+  exportCrawlData,
+  crawlFailureColumns,
+  crawlQueuePreview,
+  crawlDedupKeyOptions,
+  crawlTableColumns,
+  useCurrentUrlAsStart,
+  importStartUrlsToQueue,
+  clearCrawlQueue,
+  clearCrawlResults,
+  togglePauseCrawl,
+  stopCrawl,
+  startCrawl
+} = useScraperCrawlTask({
+  targetUrl,
+  startUrlsText,
+  crawlQueue,
+  crawlResults,
+  crawlRunning,
+  crawlProcessed,
+  crawlMaxPages,
+  crawlConcurrency,
+  crawlDelayMs,
+  crawlRetry,
+  discoverLinksSelector,
+  discoverLinksAttr,
+  discoverLinksCustomAttr,
+  nextPageSelector,
+  nextPageAttr,
+  nextPageCustomAttr,
+  crawlRunId,
+  crawlPaused,
+  crawlActiveUrls,
+  crawlFailures,
+  crawlLogs,
+  crawlDedupEnabled,
+  crawlDedupKey,
+  crawlClearOnStart,
+  fields,
+  listMode,
+  listSelector,
+  requestHeaders,
+  requestTimeout,
+  proxyUrl,
+  acceptInvalidCerts,
+  invoke,
+  save,
+  writeTextFile,
+  extractValue,
+  messageApi: message
 });
 
-const crawlQueuePreview = computed(() => {
-  return (crawlQueue.value || []).slice(0, 30);
+const {
+  directoryUrl,
+  linkSelector: novelLinkSelector,
+  linkAttr: novelLinkAttr,
+  sameDomainOnly: novelSameDomainOnly,
+  includePattern: novelIncludePattern,
+  excludePattern: novelExcludePattern,
+  maxItems: novelMaxItems,
+  parsing: novelParsing,
+  parseError: novelParseError,
+  chapters: novelChapters,
+  canParse: novelCanParse,
+  parseDirectory: parseNovelDirectory
+} = useScraperNovelDirectory({
+  invoke,
+  buildRequestHeadersObject,
+  requestTimeout,
+  proxyUrl,
+  acceptInvalidCerts,
+  messageApi: message
 });
 
-const crawlDedupKeyOptions = computed(() => {
-  const opts = [
-    { label: '__url', value: '__url' }
-  ];
-  fields.filter(f => f && f.name).forEach(f => {
-    opts.push({ label: f.name, value: f.name });
-  });
-  return opts;
-});
+const exportNovelCrawlerTxt = async () => {
+  try {
+    await ensureNovelCrawlListeners();
+    const urls = (Array.isArray(novelChapters.value) ? novelChapters.value : [])
+      .map((x) => x?.url)
+      .filter(Boolean)
+      .map((u) => normalizedUrl(u))
+      .filter(Boolean);
+    if (!urls.length) {
+      message.warning('没有可导出的章节链接（请先解析目录）');
+      return;
+    }
+
+    const filePath = await save({
+      defaultPath: 'novel.txt',
+      filters: [{ name: 'Text', extensions: ['txt'] }]
+    });
+    if (!filePath) return;
+
+    novelCrawlRunning.value = true;
+    novelCrawlProcessed.value = 0;
+    novelCrawlQueueRemaining.value = urls.length;
+    pushNovelCrawlLog('开始后端导出 TXT');
+
+    const runId = await invoke('novel_crawl_export', {
+      req: {
+        urls,
+        outputPath: filePath,
+        exportFormat: 'txt',
+        titleSelector: String(novelTitleSelector.value || '').trim(),
+        contentSelector: String(novelContentSelector.value || '').trim(),
+        headers: buildRequestHeadersObject(),
+        timeoutMs: requestTimeout.value,
+        proxyUrl: proxyUrl.value,
+        acceptInvalidCerts: acceptInvalidCerts.value,
+        concurrency: Number(novelCrawlConcurrency.value || 1),
+        delayMs: Number(novelCrawlDelayMs.value || 0),
+        retry: Number(novelCrawlRetry.value || 0),
+        maxPages: Number(novelCrawlMaxPages.value || 0),
+        includeUrlLine: !!novelExportIncludeUrlLine.value,
+        cleanRegexLines: novelCleanEnabled.value
+          ? String(novelCleanRegexText.value || '').split(/\r?\n/).map((x) => x.trim()).filter(Boolean)
+          : [],
+        jsonKeys: {
+          title: String(novelJsonKeyTitle.value || 'title').trim() || 'title',
+          content: String(novelJsonKeyContent.value || 'content').trim() || 'content',
+          url: String(novelJsonKeyUrl.value || 'url').trim() || 'url'
+        }
+      }
+    });
+    novelCrawlCurrentRunId.value = Number(runId || 0);
+    message.info('已提交后端任务，正在导出...');
+  } catch (_) {
+    message.error('导出失败');
+  }
+};
+
+const exportNovelCrawlerJson = async () => {
+  try {
+    await ensureNovelCrawlListeners();
+    const urls = (Array.isArray(novelChapters.value) ? novelChapters.value : [])
+      .map((x) => x?.url)
+      .filter(Boolean)
+      .map((u) => normalizedUrl(u))
+      .filter(Boolean);
+    if (!urls.length) {
+      message.warning('没有可导出的章节链接（请先解析目录）');
+      return;
+    }
+
+    const filePath = await save({
+      defaultPath: 'novel.json',
+      filters: [{ name: 'JSON', extensions: ['json'] }]
+    });
+    if (!filePath) return;
+
+    novelCrawlRunning.value = true;
+    novelCrawlProcessed.value = 0;
+    novelCrawlQueueRemaining.value = urls.length;
+    pushNovelCrawlLog('开始后端导出 JSON');
+
+    const runId = await invoke('novel_crawl_export', {
+      req: {
+        urls,
+        outputPath: filePath,
+        exportFormat: 'json',
+        titleSelector: String(novelTitleSelector.value || '').trim(),
+        contentSelector: String(novelContentSelector.value || '').trim(),
+        headers: buildRequestHeadersObject(),
+        timeoutMs: requestTimeout.value,
+        proxyUrl: proxyUrl.value,
+        acceptInvalidCerts: acceptInvalidCerts.value,
+        concurrency: Number(novelCrawlConcurrency.value || 1),
+        delayMs: Number(novelCrawlDelayMs.value || 0),
+        retry: Number(novelCrawlRetry.value || 0),
+        maxPages: Number(novelCrawlMaxPages.value || 0),
+        includeUrlLine: false,
+        cleanRegexLines: novelCleanEnabled.value
+          ? String(novelCleanRegexText.value || '').split(/\r?\n/).map((x) => x.trim()).filter(Boolean)
+          : [],
+        jsonKeys: {
+          title: String(novelJsonKeyTitle.value || 'title').trim() || 'title',
+          content: String(novelJsonKeyContent.value || 'content').trim() || 'content',
+          url: String(novelJsonKeyUrl.value || 'url').trim() || 'url'
+        }
+      }
+    });
+    novelCrawlCurrentRunId.value = Number(runId || 0);
+    message.info('已提交后端任务，正在导出...');
+  } catch (_) {
+    message.error('导出失败');
+  }
+};
 
 const pasteUrl = async () => {
   try {
@@ -997,29 +1657,6 @@ const openInBrowser = () => {
   window.open(u, '_blank');
 };
 
-const addToHistory = (url) => {
-  const u = normalizedUrl(url);
-  if (!u) return;
-  urlHistory.value = [u, ...urlHistory.value.filter(x => x !== u)].slice(0, MAX_URL_HISTORY);
-  saveUrlHistory();
-};
-
-const clearUrlHistory = () => {
-  urlHistory.value = [];
-  saveUrlHistory();
-  message.success('已清空 URL 历史');
-};
-
-const urlHistoryOptions = computed(() => {
-  const q = (targetUrl.value || '').trim().toLowerCase();
-  const list = q ? urlHistory.value.filter(u => u.toLowerCase().includes(q)) : urlHistory.value;
-  return list.slice(0, 8).map(u => ({ value: u }));
-});
-
-const onSelectHistoryUrl = (value) => {
-  targetUrl.value = value;
-};
-
 // --- Settings Logic ---
 const addHeader = () => {
   requestHeaders.value.push({ key: '', value: '' });
@@ -1029,633 +1666,6 @@ const removeHeader = (index) => {
   requestHeaders.value.splice(index, 1);
 };
 
-const cloneFields = () => {
-  try {
-    return JSON.parse(JSON.stringify(fields));
-  } catch (_) {
-    return fields.map(f => ({ ...f }));
-  }
-};
-
-const normalizeFields = (arr) => {
-  const list = Array.isArray(arr) ? arr : [];
-  return list.map((f, idx) => ({
-    name: typeof f?.name === 'string' ? f.name : `field_${idx + 1}`,
-    selector: typeof f?.selector === 'string' ? f.selector : '',
-    attr: typeof f?.attr === 'string' ? f.attr : 'text',
-    customAttr: typeof f?.customAttr === 'string' ? f.customAttr : '',
-    transformType: typeof f?.transformType === 'string' ? f.transformType : 'none',
-    transformPattern: typeof f?.transformPattern === 'string' ? f.transformPattern : '',
-    transformReplacement: typeof f?.transformReplacement === 'string' ? f.transformReplacement : ''
-  }));
-};
-
-const cloneHeaders = () => {
-  const list = Array.isArray(requestHeaders.value) ? requestHeaders.value : [];
-  return list.map(h => ({
-    key: typeof h?.key === 'string' ? h.key : '',
-    value: typeof h?.value === 'string' ? h.value : ''
-  }));
-};
-
-const getCurrentConfigSnapshot = () => {
-  return {
-    targetUrl: targetUrl.value,
-    requestMethod: requestMethod.value,
-    fields: cloneFields(),
-    listMode: listMode.value,
-    listSelector: listSelector.value,
-    headers: cloneHeaders(),
-    requestTimeout: requestTimeout.value,
-    proxyUrl: proxyUrl.value,
-    acceptInvalidCerts: acceptInvalidCerts.value,
-    autoExitOnPick: autoExitOnPick.value,
-    autoAdvanceOnPick: autoAdvanceOnPick.value,
-
-    startUrlsText: startUrlsText.value,
-    crawlMaxPages: crawlMaxPages.value,
-    crawlConcurrency: crawlConcurrency.value,
-    crawlDelayMs: crawlDelayMs.value,
-    crawlRetry: crawlRetry.value,
-    discoverLinksSelector: discoverLinksSelector.value,
-    discoverLinksAttr: discoverLinksAttr.value,
-    discoverLinksCustomAttr: discoverLinksCustomAttr.value,
-    nextPageSelector: nextPageSelector.value,
-    nextPageAttr: nextPageAttr.value,
-    nextPageCustomAttr: nextPageCustomAttr.value,
-
-    crawlDedupEnabled: crawlDedupEnabled.value,
-    crawlDedupKey: crawlDedupKey.value,
-    crawlClearOnStart: crawlClearOnStart.value
-  };
-};
-
-const applyConfigSnapshot = (config) => {
-  if (!config || typeof config !== 'object') return;
-  if (typeof config.targetUrl === 'string') targetUrl.value = config.targetUrl;
-  if (typeof config.requestMethod === 'string') requestMethod.value = config.requestMethod;
-  if (Array.isArray(config.fields)) {
-    fields.length = 0;
-    fields.push(...normalizeFields(config.fields));
-  }
-  if (typeof config.listMode === 'boolean') listMode.value = config.listMode;
-  if (typeof config.listSelector === 'string') listSelector.value = config.listSelector;
-  if (Array.isArray(config.headers)) requestHeaders.value = config.headers;
-  if (typeof config.requestTimeout === 'number') requestTimeout.value = config.requestTimeout;
-  if (typeof config.proxyUrl === 'string') proxyUrl.value = config.proxyUrl;
-  if (typeof config.acceptInvalidCerts === 'boolean') acceptInvalidCerts.value = config.acceptInvalidCerts;
-  if (typeof config.autoExitOnPick === 'boolean') autoExitOnPick.value = config.autoExitOnPick;
-  if (typeof config.autoAdvanceOnPick === 'boolean') autoAdvanceOnPick.value = config.autoAdvanceOnPick;
-
-  if (typeof config.startUrlsText === 'string') startUrlsText.value = config.startUrlsText;
-  if (typeof config.crawlMaxPages === 'number') crawlMaxPages.value = config.crawlMaxPages;
-  if (typeof config.crawlConcurrency === 'number') crawlConcurrency.value = config.crawlConcurrency;
-  if (typeof config.crawlDelayMs === 'number') crawlDelayMs.value = config.crawlDelayMs;
-  if (typeof config.crawlRetry === 'number') crawlRetry.value = config.crawlRetry;
-  if (typeof config.discoverLinksSelector === 'string') discoverLinksSelector.value = config.discoverLinksSelector;
-  if (typeof config.discoverLinksAttr === 'string') discoverLinksAttr.value = config.discoverLinksAttr;
-  if (typeof config.discoverLinksCustomAttr === 'string') discoverLinksCustomAttr.value = config.discoverLinksCustomAttr;
-  if (typeof config.nextPageSelector === 'string') nextPageSelector.value = config.nextPageSelector;
-  if (typeof config.nextPageAttr === 'string') nextPageAttr.value = config.nextPageAttr;
-  if (typeof config.nextPageCustomAttr === 'string') nextPageCustomAttr.value = config.nextPageCustomAttr;
-
-  if (typeof config.crawlDedupEnabled === 'boolean') crawlDedupEnabled.value = config.crawlDedupEnabled;
-  if (typeof config.crawlDedupKey === 'string') crawlDedupKey.value = config.crawlDedupKey;
-  if (typeof config.crawlClearOnStart === 'boolean') crawlClearOnStart.value = config.crawlClearOnStart;
-};
-
-const loadTemplates = () => {
-  try {
-    const raw = localStorage.getItem(TEMPLATES_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    templates.value = Array.isArray(parsed) ? parsed : [];
-  } catch (_) {
-    templates.value = [];
-  }
-};
-
-const saveTemplates = () => {
-  try {
-    localStorage.setItem(TEMPLATES_KEY, JSON.stringify(templates.value || []));
-  } catch (_) {}
-};
-
-const templateOptions = computed(() => {
-  return (templates.value || []).map(t => ({ label: t.name, value: t.id }));
-});
-
-const openSaveTemplate = () => {
-  templateModalMode.value = 'save';
-  templateNameInput.value = '';
-  templateModalVisible.value = true;
-};
-
-const openLoadTemplate = () => {
-  templateModalMode.value = 'load';
-  selectedTemplateId.value = '';
-  templateModalVisible.value = true;
-};
-
-const confirmSaveTemplate = () => {
-  const name = (templateNameInput.value || '').trim();
-  if (!name) {
-    message.warning('请输入模板名称');
-    return;
-  }
-  const id = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
-  const snapshot = getCurrentConfigSnapshot();
-  templates.value = [{ id, name, snapshot, updatedAt: Date.now() }, ...(templates.value || [])];
-  saveTemplates();
-  templateModalVisible.value = false;
-  message.success('模板已保存');
-};
-
-const confirmLoadTemplate = () => {
-  const id = selectedTemplateId.value;
-  const tpl = (templates.value || []).find(t => t.id === id);
-  if (!tpl) {
-    message.warning('请选择模板');
-    return;
-  }
-  applyConfigSnapshot(tpl.snapshot);
-  templateModalVisible.value = false;
-  scheduleRefreshPreview();
-  message.success('模板已加载');
-};
-
-const deleteSelectedTemplate = () => {
-  const id = selectedTemplateId.value;
-  if (!id) return;
-  templates.value = (templates.value || []).filter(t => t.id !== id);
-  saveTemplates();
-  selectedTemplateId.value = '';
-  message.success('模板已删除');
-};
-
-const autosaveTimer = ref(null);
-const scheduleAutosave = () => {
-  if (autosaveTimer.value) clearTimeout(autosaveTimer.value);
-  autosaveTimer.value = setTimeout(() => {
-    try {
-      localStorage.setItem(LAST_CONFIG_KEY, JSON.stringify(getCurrentConfigSnapshot()));
-    } catch (_) {}
-  }, 400);
-};
-
-watch(
-  () => getCurrentConfigSnapshot(),
-  () => scheduleAutosave(),
-  { deep: true }
-);
-
-// --- Import/Export Logic ---
-const fileInput = ref(null);
-
-const exportRules = () => {
-  const config = {
-    targetUrl: targetUrl.value,
-    requestMethod: requestMethod.value,
-    fields: cloneFields(),
-    listMode: listMode.value,
-    listSelector: listSelector.value,
-    headers: cloneHeaders(),
-    requestTimeout: requestTimeout.value,
-    proxyUrl: proxyUrl.value,
-    acceptInvalidCerts: acceptInvalidCerts.value,
-
-    startUrlsText: startUrlsText.value,
-    crawlMaxPages: crawlMaxPages.value,
-    crawlConcurrency: crawlConcurrency.value,
-    crawlDelayMs: crawlDelayMs.value,
-    crawlRetry: crawlRetry.value,
-    discoverLinksSelector: discoverLinksSelector.value,
-    discoverLinksAttr: discoverLinksAttr.value,
-    discoverLinksCustomAttr: discoverLinksCustomAttr.value,
-    nextPageSelector: nextPageSelector.value,
-    nextPageAttr: nextPageAttr.value,
-    nextPageCustomAttr: nextPageCustomAttr.value
-  };
-  downloadFile('scraper-rules.json', JSON.stringify(config, null, 2));
-};
-
-const triggerImport = () => {
-  fileInput.value.click();
-};
-
-const importRules = (event) => {
-  const file = event.target.files[0];
-  if (!file) return;
-
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    try {
-      const config = JSON.parse(e.target.result);
-      if (config.targetUrl) targetUrl.value = config.targetUrl;
-      if (config.requestMethod) requestMethod.value = config.requestMethod;
-      if (config.fields) {
-        fields.length = 0;
-        fields.push(...normalizeFields(config.fields));
-      }
-      if (config.listMode !== undefined) listMode.value = config.listMode;
-      if (config.listSelector) listSelector.value = config.listSelector;
-      if (config.headers) requestHeaders.value = config.headers;
-
-      if (typeof config.requestTimeout === 'number') requestTimeout.value = config.requestTimeout;
-      if (typeof config.proxyUrl === 'string') proxyUrl.value = config.proxyUrl;
-      if (typeof config.acceptInvalidCerts === 'boolean') acceptInvalidCerts.value = config.acceptInvalidCerts;
-
-      if (typeof config.startUrlsText === 'string') startUrlsText.value = config.startUrlsText;
-      if (typeof config.crawlMaxPages === 'number') crawlMaxPages.value = config.crawlMaxPages;
-      if (typeof config.crawlConcurrency === 'number') crawlConcurrency.value = config.crawlConcurrency;
-      if (typeof config.crawlDelayMs === 'number') crawlDelayMs.value = config.crawlDelayMs;
-      if (typeof config.crawlRetry === 'number') crawlRetry.value = config.crawlRetry;
-      if (typeof config.discoverLinksSelector === 'string') discoverLinksSelector.value = config.discoverLinksSelector;
-      if (typeof config.discoverLinksAttr === 'string') discoverLinksAttr.value = config.discoverLinksAttr;
-      if (typeof config.discoverLinksCustomAttr === 'string') discoverLinksCustomAttr.value = config.discoverLinksCustomAttr;
-      if (typeof config.nextPageSelector === 'string') nextPageSelector.value = config.nextPageSelector;
-      if (typeof config.nextPageAttr === 'string') nextPageAttr.value = config.nextPageAttr;
-      if (typeof config.nextPageCustomAttr === 'string') nextPageCustomAttr.value = config.nextPageCustomAttr;
-      
-      message.success('规则导入成功');
-      refreshPreview();
-    } catch (err) {
-      message.error('规则文件解析失败');
-    }
-  };
-  reader.readAsText(file);
-  event.target.value = ''; // Reset
-};
-
-const exportData = (type) => {
-  if (!previewResult.value) return;
-  
-  if (type === 'json') {
-    downloadFile('data.json', JSON.stringify(previewResult.value, null, 2));
-  } else if (type === 'csv') {
-    // Simple CSV conversion
-    let data = Array.isArray(previewResult.value) ? previewResult.value : [previewResult.value];
-    if (data.length === 0) return;
-    
-    const headers = Object.keys(data[0]);
-    const csvContent = [
-      headers.join(','),
-      ...data.map(row => headers.map(fieldName => {
-        let val = row[fieldName] || '';
-        val = String(val).replace(/"/g, '""'); // Escape quotes
-        return `"${val}"`;
-      }).join(','))
-    ].join('\n');
-    
-    downloadFile('data.csv', csvContent, 'text/csv');
-  }
-};
-
-const downloadFile = (filename, content, type = 'text/plain') => {
-  const blob = new Blob([content], { type });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-};
-
-const parseStartUrls = () => {
-  const text = (startUrlsText.value || '').trim();
-  const list = text
-    ? text.split(/\r?\n/).map(x => normalizedUrl(x)).filter(Boolean)
-    : (targetUrl.value ? [normalizedUrl(targetUrl.value)] : []);
-  return Array.from(new Set(list));
-};
-
-const enqueueUrls = (urls) => {
-  const set = new Set(crawlQueue.value);
-  (urls || []).forEach(u => {
-    const nu = normalizedUrl(u);
-    if (!nu) return;
-    if (!set.has(nu)) {
-      set.add(nu);
-      crawlQueue.value.push(nu);
-    }
-  });
-};
-
-const useCurrentUrlAsStart = () => {
-  const u = normalizedUrl(targetUrl.value);
-  if (!u) return;
-  const current = (startUrlsText.value || '').trim();
-  startUrlsText.value = current ? (current + '\n' + u) : u;
-};
-
-const importStartUrlsToQueue = () => {
-  const urls = parseStartUrls();
-  if (!urls.length) {
-    message.warning('没有可导入的 URL');
-    return;
-  }
-  enqueueUrls(urls);
-  message.success(`已导入 ${urls.length} 个 URL 到队列`);
-};
-
-const clearCrawlQueue = () => {
-  crawlQueue.value = [];
-};
-
-const clearCrawlResults = () => {
-  crawlResults.value = [];
-  crawlProcessed.value = 0;
-};
-
-const togglePauseCrawl = () => {
-  if (!crawlRunning.value) return;
-  crawlPaused.value = !crawlPaused.value;
-  pushCrawlLog(crawlPaused.value ? '任务已暂停' : '任务已继续');
-};
-
-const stopCrawl = () => {
-  crawlRunning.value = false;
-  crawlPaused.value = false;
-  crawlActiveUrls.value = [];
-  crawlRunId.value += 1;
-};
-
-const getAttrValue = (el, attr, customAttr) => {
-  if (!el) return '';
-  if (attr === 'custom') return el.getAttribute(customAttr || '');
-  return el.getAttribute(attr);
-};
-
-const extractFromDocForTask = (doc, pageUrl) => {
-  if (!doc) return [];
-  const results = [];
-  if (listMode.value && listSelector.value) {
-    const items = Array.from(doc.querySelectorAll(listSelector.value));
-    items.forEach((item, idx) => {
-      const row = { __url: pageUrl, __index: idx + 1 };
-      fields.forEach(field => {
-        if (field.name && field.selector) {
-          const el = item.querySelector(field.selector);
-          row[field.name] = extractValue(el, field, pageUrl);
-        }
-      });
-      results.push(row);
-    });
-  } else {
-    const row = { __url: pageUrl, __index: 1 };
-    fields.forEach(field => {
-      if (field.name && field.selector) {
-        const el = doc.querySelector(field.selector);
-        row[field.name] = extractValue(el, field, pageUrl);
-      }
-    });
-    results.push(row);
-  }
-  return results;
-};
-
-const discoverUrlsFromDoc = (doc, pageUrl) => {
-  const sel = (discoverLinksSelector.value || '').trim();
-  if (!sel) return [];
-  try {
-    const nodes = Array.from(doc.querySelectorAll(sel));
-    const urls = nodes
-      .map(el => getAttrValue(el, discoverLinksAttr.value, discoverLinksCustomAttr.value))
-      .filter(Boolean)
-      .map(u => safeResolveUrl(pageUrl, u));
-    return Array.from(new Set(urls));
-  } catch (_) {
-    return [];
-  }
-};
-
-const getNextPageUrlFromDoc = (doc, pageUrl) => {
-  const sel = (nextPageSelector.value || '').trim();
-  if (!sel) {
-    try {
-      const links = Array.from(doc.querySelectorAll('a'));
-      const preferred = links.find(a => {
-        const text = (a.textContent || '').trim();
-        if (!text) return false;
-        return text.includes('下一章') || text.includes('下章') || text.includes('下一页') || text.includes('下页');
-      });
-      const href = preferred ? preferred.getAttribute('href') : '';
-      return href ? safeResolveUrl(pageUrl, href) : '';
-    } catch (_) {
-      return '';
-    }
-  }
-  try {
-    const el = doc.querySelector(sel);
-    const raw = getAttrValue(el, nextPageAttr.value, nextPageCustomAttr.value);
-    return raw ? safeResolveUrl(pageUrl, raw) : '';
-  } catch (_) {
-    return '';
-  }
-};
-
-const buildRequestHeadersObject = () => {
-  const headers = {};
-  (requestHeaders.value || []).forEach(h => {
-    if (h.key && h.value) headers[h.key] = h.value;
-  });
-  return headers;
-};
-
-const fetchHtmlForTask = async (url) => {
-  const html = await invoke('fetch_url_decoded', {
-    req: {
-      url,
-      headers: buildRequestHeadersObject(),
-      timeoutMs: requestTimeout.value,
-      proxyUrl: proxyUrl.value,
-      acceptInvalidCerts: acceptInvalidCerts.value
-    }
-  });
-  return String(html || '');
-};
-
-const crawlTableColumns = computed(() => {
-  const cols = [
-    { title: '__url', dataIndex: '__url', key: '__url' },
-    { title: '__index', dataIndex: '__index', key: '__index', width: 80 }
-  ];
-  fields
-    .filter(f => f && f.name)
-    .forEach(f => {
-      cols.push({ title: f.name, dataIndex: f.name, key: f.name });
-    });
-  return cols;
-});
-
-const exportCrawlData = (type) => {
-  if (!crawlResults.value || crawlResults.value.length === 0) return;
-
-  (async () => {
-    try {
-      const ext = type === 'csv' ? 'csv' : 'json';
-      const filePath = await save({
-        defaultPath: `crawl-data.${ext}`,
-        filters: [
-          { name: ext.toUpperCase(), extensions: [ext] }
-        ]
-      });
-      if (!filePath) return;
-
-      if (type === 'json') {
-        await writeTextFile(filePath, JSON.stringify(crawlResults.value, null, 2));
-        message.success('导出成功');
-        return;
-      }
-
-      const data = crawlResults.value;
-      const headers = Array.from(new Set(data.flatMap(row => Object.keys(row || {}))));
-      const csvContent = [
-        headers.join(','),
-        ...data.map(row => headers.map(k => {
-          let val = row?.[k] ?? '';
-          val = String(val).replace(/"/g, '""');
-          return `"${val}"`;
-        }).join(','))
-      ].join('\n');
-      await writeTextFile(filePath, csvContent);
-      message.success('导出成功');
-    } catch (e) {
-      try {
-        if (type === 'json') {
-          downloadFile('crawl-data.json', JSON.stringify(crawlResults.value, null, 2));
-          message.info('已使用浏览器下载方式导出');
-          return;
-        }
-        const data = crawlResults.value;
-        const headers = Array.from(new Set(data.flatMap(row => Object.keys(row || {}))));
-        const csvContent = [
-          headers.join(','),
-          ...data.map(row => headers.map(k => {
-            let val = row?.[k] ?? '';
-            val = String(val).replace(/"/g, '""');
-            return `"${val}"`;
-          }).join(','))
-        ].join('\n');
-        downloadFile('crawl-data.csv', csvContent, 'text/csv');
-        message.info('已使用浏览器下载方式导出');
-      } catch (_) {
-        message.error('导出失败');
-      }
-    }
-  })();
-};
-
-const startCrawl = async () => {
-  if (crawlRunning.value) return;
-  const runId = crawlRunId.value + 1;
-  crawlRunId.value = runId;
-
-  if (crawlClearOnStart.value) {
-    clearCrawlResults();
-    clearCrawlFailures();
-    clearCrawlLogs();
-  }
-
-  crawlPaused.value = false;
-
-  const starters = parseStartUrls();
-  enqueueUrls(starters);
-
-  if (crawlQueue.value.length === 0) {
-    message.warning('队列为空');
-    return;
-  }
-
-  crawlRunning.value = true;
-  const visited = new Set();
-  const dedupSet = new Set();
-  pushCrawlLog(`开始任务：并发=${crawlConcurrency.value} 间隔=${crawlDelayMs.value}ms 最大页数=${crawlMaxPages.value}`);
-
-  const worker = async () => {
-    while (crawlRunning.value && crawlRunId.value === runId) {
-      if (crawlProcessed.value >= crawlMaxPages.value) break;
-
-      while (crawlPaused.value && crawlRunning.value && crawlRunId.value === runId) {
-        await sleep(150);
-      }
-
-      const url = crawlQueue.value.shift();
-      if (!url) break;
-      if (visited.has(url)) continue;
-      visited.add(url);
-
-      crawlActiveUrls.value = Array.from(new Set([...(crawlActiveUrls.value || []), url]));
-      pushCrawlLog(`抓取: ${url}`);
-
-      let attempt = 0;
-      while (crawlRunning.value && crawlRunId.value === runId) {
-        try {
-          const html = await fetchHtmlForTask(url);
-          const doc = new DOMParser().parseFromString(html, 'text/html');
-
-          const rows = extractFromDocForTask(doc, url);
-          rows.forEach((r, idx) => {
-            if (crawlDedupEnabled.value) {
-              const keyName = crawlDedupKey.value || '__url';
-              const keyVal = (keyName === '__url') ? url : (r?.[keyName] ?? '');
-              const dedupKeyVal = String(keyVal ?? '');
-              if (dedupKeyVal && dedupSet.has(dedupKeyVal)) return;
-              if (dedupKeyVal) dedupSet.add(dedupKeyVal);
-            }
-            crawlResults.value.push({ __rowKey: `${url}__${idx}__${Date.now()}`, ...r });
-          });
-
-          if (rows.length) pushCrawlLog(`提取结果: ${rows.length} 条`);
-
-          const discovered = discoverUrlsFromDoc(doc, url);
-          if (discovered.length) {
-            enqueueUrls(discovered);
-            pushCrawlLog(`发现链接: +${discovered.length}`);
-          }
-
-          const nextUrl = getNextPageUrlFromDoc(doc, url);
-          if (nextUrl) {
-            enqueueUrls([nextUrl]);
-            pushCrawlLog(`发现下一页: ${nextUrl}`);
-          }
-
-          crawlProcessed.value += 1;
-          break;
-        } catch (e) {
-          attempt += 1;
-          if (attempt > (crawlRetry.value || 0)) {
-            crawlFailures.value.push({
-              id: `${Date.now()}_${Math.random().toString(16).slice(2)}`,
-              time: new Date().toLocaleTimeString(),
-              url,
-              error: (e && e.message) ? String(e.message) : String(e)
-            });
-            pushCrawlLog(`失败: ${url}`);
-            crawlProcessed.value += 1;
-            break;
-          }
-          await sleep(200);
-        }
-      }
-
-      crawlActiveUrls.value = (crawlActiveUrls.value || []).filter(x => x !== url);
-
-      await sleep(crawlDelayMs.value);
-    }
-  };
-
-  try {
-    const n = Math.max(1, Math.min(8, crawlConcurrency.value || 1));
-    await Promise.all(Array.from({ length: n }, () => worker()));
-  } finally {
-    if (crawlRunId.value === runId) {
-      crawlRunning.value = false;
-      crawlPaused.value = false;
-      crawlActiveUrls.value = [];
-      pushCrawlLog('任务结束');
-    }
-  }
-};
 
 // --- Browser & Inspector Logic ---
 
@@ -1726,223 +1736,6 @@ const fetchPage = async () => {
   }
 };
 
-// Inject script for interaction and base tag for relative links
-const injectInspectorScript = (html, baseUrl) => {
-  // Add base tag
-  const baseTag = `<base href="${baseUrl}" target="_blank">`;
-  let processed = html;
-  if (/<head[\s>]/i.test(processed)) {
-    processed = processed.replace(/<head([^>]*)>/i, `<head$1>${baseTag}`);
-  } else if (/<html[\s>]/i.test(processed)) {
-    processed = processed.replace(/<html([^>]*)>/i, `<html$1><head>${baseTag}</head>`);
-  } else {
-    processed = `<head>${baseTag}</head>` + processed;
-  }
-  
-  // Inject Inspector Script
-  const script = `
-    <script>
-      (function() {
-        let active = false;
-        let highlighted = null;
-        let highlightedList = [];
-        
-        window.addEventListener('message', (event) => {
-          if (event.data.type === 'toggle-inspector') {
-            active = event.data.active;
-            try {
-              document.documentElement.classList.toggle('scraper-inspector-active', !!active);
-            } catch (e) {}
-            if (!active && highlighted) {
-              highlighted.style.outline = '';
-              highlighted = null;
-            }
-          }
-          if (event.data.type === 'highlight-selector') {
-            try {
-              highlightedList.forEach(el => { try { el.style.outline = ''; } catch (_) {} });
-              highlightedList = [];
-              const selector = event.data.selector;
-              if (!selector) return;
-              const list = Array.from(document.querySelectorAll(selector));
-              list.forEach(el => { el.style.outline = '2px dashed #52c41a'; });
-              highlightedList = list;
-              if (list[0] && list[0].scrollIntoView) list[0].scrollIntoView({ block: 'center', behavior: 'smooth' });
-            } catch (e) {}
-          }
-        });
-
-        document.addEventListener('mouseover', (e) => {
-          if (!active) return;
-          e.stopPropagation();
-          
-          if (highlighted) highlighted.style.outline = '';
-          e.target.style.outline = '2px solid #1890ff';
-          highlighted = e.target;
-        }, true);
-
-        document.addEventListener('mouseout', (e) => {
-          if (!active) return;
-          e.target.style.outline = '';
-        }, true);
-
-        document.addEventListener('click', (e) => {
-          if (!active) return;
-          e.preventDefault();
-          e.stopPropagation();
-          
-          const selector = generateSelector(e.target);
-          window.parent.postMessage({
-            type: 'element-selected',
-            selector: selector,
-            tagName: e.target.tagName,
-            text: e.target.innerText.slice(0, 50)
-          }, '*');
-        }, true);
-
-        function generateSelector(el) {
-          const tag = (el && el.tagName) ? el.tagName.toLowerCase() : '';
-          if (tag === 'html') return 'html';
-          if (tag === 'body') return 'body';
-
-          function isUnique(selector) {
-            try {
-              return document.querySelectorAll(selector).length === 1;
-            } catch (e) {
-              return false;
-            }
-          }
-
-          function generalizedIdSelector(tagName, id) {
-            const raw = String(id || '');
-            const m = raw.match(/^([a-zA-Z_-]+)_([0-9]{5,})$/);
-            if (m) {
-              const prefix = m[1];
-              const sel = (tagName ? tagName : '') + '[id^="' + prefix + '_"]';
-              return sel;
-            }
-            return '';
-          }
-
-          if (el.id) {
-            const gen = generalizedIdSelector(tag, el.id);
-            if (gen && isUnique(gen)) return gen;
-            return '#' + el.id;
-          }
-
-          const ignoreClasses = new Set([
-            'active', 'on', 'cur', 'current', 'hover', 'clearfix', 'fl', 'fr'
-          ]);
-          const classList = Array.from(el.classList || []).filter(Boolean).filter(c => !ignoreClasses.has(c));
-          if (classList.length) {
-            const c = classList[0];
-            const sel = tag + '.' + CSS.escape(c);
-            if (isUnique(sel)) return sel;
-          }
-
-          const path = [];
-          let node = el;
-          while (node && node.nodeType === Node.ELEMENT_NODE) {
-            let selector = node.nodeName.toLowerCase();
-
-            if (node.id) {
-              const gen = generalizedIdSelector(selector, node.id);
-              if (gen && isUnique(gen)) {
-                path.unshift(gen);
-                break;
-              }
-              selector += '#' + node.id;
-              path.unshift(selector);
-              break;
-            }
-
-            const cls = Array.from(node.classList || []).filter(Boolean).filter(c => !ignoreClasses.has(c));
-            if (cls.length) {
-              const maybe = selector + '.' + CSS.escape(cls[0]);
-              if (isUnique(maybe)) {
-                path.unshift(maybe);
-                break;
-              }
-            }
-
-            let sib = node, nth = 1;
-            while (sib = sib.previousElementSibling) {
-              if (sib.nodeName.toLowerCase() === selector) nth++;
-            }
-            if (nth !== 1) selector += ':nth-of-type(' + nth + ')';
-            path.unshift(selector);
-            node = node.parentNode;
-            if (node && node.tagName && node.tagName.toLowerCase() === 'body') break;
-          }
-
-          const full = path.join(' > ');
-          if (!full) return tag;
-
-          try {
-            const parts = full.split(' > ').map(x => x.trim()).filter(Boolean);
-            for (let i = 0; i < parts.length; i++) {
-              const candidate = parts.slice(i).join(' > ');
-              if (candidate && isUnique(candidate)) return candidate;
-            }
-          } catch (e) {}
-
-          return full;
-        }
-      })();
-    <\/script>
-    <style>
-      .scraper-inspector-active iframe,
-      .scraper-inspector-active object,
-      .scraper-inspector-active embed { pointer-events: none; }
-    </style>
-  `;
-  
-  return processed + script;
-};
-
-const toggleInspector = () => {
-  // Logic now handled by watch(isInspectorActive) usually, or we can just send the message
-  // But since we use v-model isInspectorActive, we should watch it.
-};
-
-watch(isInspectorActive, (active) => {
-   if (!rawHtml.value) {
-     if(active) message.warning("请先加载页面");
-     if (active) isInspectorActive.value = false;
-     return;
-   }
-   if (previewFrame.value && previewFrame.value.contentWindow) {
-    previewFrame.value.contentWindow.postMessage({
-      type: 'toggle-inspector',
-      active: active
-    }, '*');
-  }
-});
-
-// Handle messages from iframe
-const handleMessage = (event) => {
-  if (event.data.type === 'element-selected') {
-    if (currentFieldIndex.value !== -1 && fields[currentFieldIndex.value]) {
-      fields[currentFieldIndex.value].selector = optimizeSelector(String(event.data.selector || ''));
-      if (isDefaultFieldName(fields[currentFieldIndex.value].name)) {
-        fields[currentFieldIndex.value].name = suggestFieldNameFromPick(event.data, currentFieldIndex.value);
-      }
-      triggerFieldFlash(currentFieldIndex.value);
-      message.success(`已选择: ${event.data.tagName}`);
-      // Refresh preview automatically
-      scheduleRefreshPreview();
-
-      if (autoAdvanceOnPick.value) {
-        if (currentFieldIndex.value < fields.length - 1) {
-          currentFieldIndex.value += 1;
-        }
-      }
-      if (autoExitOnPick.value) {
-        isInspectorActive.value = false;
-      }
-    }
-  }
-};
 
 const handleKeydown = (e) => {
   const key = (e.key || '').toLowerCase();
@@ -1971,20 +1764,12 @@ const handleKeydown = (e) => {
 };
 
 onMounted(() => {
-  window.addEventListener('message', handleMessage);
+  window.addEventListener('message', handleInspectorMessage);
   window.addEventListener('keydown', handleKeydown);
   loadUrlHistory();
   loadTemplates();
 
-  try {
-    const raw = localStorage.getItem(LAST_CONFIG_KEY);
-    const parsed = raw ? JSON.parse(raw) : null;
-    if (parsed && typeof parsed === 'object') {
-      applyConfigSnapshot(parsed);
-    }
-  } catch (_) {
-    // ignore
-  }
+  loadLastConfig();
 
   try {
     const raw = localStorage.getItem(PICK_SETTINGS_KEY);
@@ -2010,17 +1795,13 @@ watch([autoExitOnPick, autoAdvanceOnPick], () => {
 });
 
 onUnmounted(() => {
-  window.removeEventListener('message', handleMessage);
+  window.removeEventListener('message', handleInspectorMessage);
   window.removeEventListener('keydown', handleKeydown);
+  try { if (unlistenNovelCrawlProgress) unlistenNovelCrawlProgress(); } catch (_) {}
+  try { if (unlistenNovelCrawlFinished) unlistenNovelCrawlFinished(); } catch (_) {}
   stopCrawl();
-  if (refreshTimer.value) {
-    clearTimeout(refreshTimer.value);
-    refreshTimer.value = null;
-  }
-  if (autosaveTimer.value) {
-    clearTimeout(autosaveTimer.value);
-    autosaveTimer.value = null;
-  }
+  disposePreview();
+  disposeStorage();
 });
 
 // --- Field Management ---
@@ -2083,668 +1864,17 @@ const clearFieldSelector = (index) => {
   if (fields[index]) fields[index].selector = '';
 };
 
-// --- Preview Logic ---
-const previewResult = ref([]);
-
-const cachedDocHtml = ref('');
-const cachedDoc = ref(null);
-const getParsedDoc = () => {
-  const html = rawHtml.value || '';
-  if (!html) return null;
-  if (cachedDoc.value && cachedDocHtml.value === html) return cachedDoc.value;
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(html, 'text/html');
-  cachedDoc.value = doc;
-  cachedDocHtml.value = html;
-  return doc;
-};
-
-const isDefaultFieldName = (name) => {
-  const s = String(name || '').trim();
-  return !s || /^field_\d+$/i.test(s);
-};
-
-const suggestFieldNameFromPick = (payload, index) => {
-  const tag = String(payload?.tagName || '').toLowerCase();
-  let text = String(payload?.text || '').trim();
-  text = text.replace(/\s+/g, ' ').trim();
-  text = text.replace(/[\u0000-\u001F]/g, '');
-  let base = text || tag || `field_${index + 1}`;
-  base = base.replace(/\s+/g, '_');
-  base = base.replace(/[^\w\u4e00-\u9fa5$-]/g, '_');
-  base = base.replace(/_+/g, '_');
-  base = base.replace(/^_+|_+$/g, '');
-  if (!base) base = tag || `field_${index + 1}`;
-  if (base.length > 20) base = base.slice(0, 20);
-
-  const used = new Set(fields.map(f => String(f?.name || '').trim()).filter(Boolean));
-  let candidate = base;
-  let i = 2;
-  while (used.has(candidate)) {
-    candidate = `${base}_${i}`;
-    i += 1;
-  }
-  return candidate;
-};
-
-const isSelectorUnique = (doc, selector) => {
-  try {
-    return doc.querySelectorAll(selector).length === 1;
-  } catch (_) {
-    return false;
-  }
-};
-
-const optimizeSelector = (selector) => {
-  const s = (selector || '').trim();
-  if (!s) return s;
-  const doc = getParsedDoc();
-  if (!doc) return s;
-
-  const generalizeDynamicIds = (sel) => {
-    return sel
-      .replace(/([a-z0-9_-]+)?#([a-zA-Z_-]+)_([0-9]{5,})/g, (m, tag, prefix) => {
-        const t = tag ? tag : '';
-        return `${t}[id^="${prefix}_"]`;
-      });
-  };
-
-  if (s.includes('#')) {
-    const gen = generalizeDynamicIds(s);
-    if (gen !== s && isSelectorUnique(doc, gen)) return gen;
-    return s;
-  }
-
-  let best = s;
-  const withoutNthAll = best.replace(/:nth-of-type\(\d+\)/g, '');
-  if (withoutNthAll && isSelectorUnique(doc, withoutNthAll)) best = withoutNthAll;
-
-  const parts = best.split(' > ').map(x => x.trim()).filter(Boolean);
-  for (let cut = 0; cut < parts.length - 1; cut++) {
-    const candidate = parts.slice(cut).join(' > ');
-    if (candidate && isSelectorUnique(doc, candidate)) best = candidate;
-  }
-
-  return best;
-};
-
-const fieldDiagnostics = computed(() => {
-  const doc = getParsedDoc();
-  if (!doc) return [];
-  const modeList = !!listMode.value;
-  const listSel = (listSelector.value || '').trim();
-  let listItems = [];
-  if (modeList && listSel) {
-    try {
-      listItems = Array.from(doc.querySelectorAll(listSel));
-    } catch (_) {
-      listItems = [];
-    }
-  }
-  const sampleItems = listItems.length > 30 ? listItems.slice(0, 30) : listItems;
-
-  return fields.map((f) => {
-    const sel = (f && f.selector) ? String(f.selector).trim() : '';
-    if (!sel) return { state: 'empty' };
-    try {
-      if (!modeList) {
-        const n = doc.querySelectorAll(sel).length;
-        if (n === 0) return { state: 'zero', count: 0 };
-        if (n === 1) return { state: 'ok', count: 1 };
-        return { state: 'multi', count: n };
-      }
-
-      if (!listSel) return { state: 'needList' };
-      if (sampleItems.length === 0) return { state: 'noListItems' };
-      let hitItems = 0;
-      let totalMatches = 0;
-      for (const item of sampleItems) {
-        const c = item.querySelectorAll(sel).length;
-        if (c > 0) hitItems += 1;
-        totalMatches += c;
-      }
-      const avg = totalMatches / sampleItems.length;
-      if (hitItems === 0) return { state: 'zero', count: 0, hitItems, sample: sampleItems.length, avg };
-      if (hitItems < sampleItems.length) return { state: 'partial', count: totalMatches, hitItems, sample: sampleItems.length, avg };
-      if (avg > 1.01) return { state: 'multi', count: totalMatches, hitItems, sample: sampleItems.length, avg };
-      return { state: 'ok', count: totalMatches, hitItems, sample: sampleItems.length, avg };
-    } catch (_) {
-      return { state: 'invalid' };
-    }
-  });
-});
-
-const fieldDiagnosticText = (index) => {
-  const d = fieldDiagnostics.value?.[index];
-  if (!d) return '—';
-  if (d.state === 'empty') return '未设置';
-  if (d.state === 'invalid') return '选择器错误';
-  if (d.state === 'needList') return '需列表选择器';
-  if (d.state === 'noListItems') return '列表为空';
-  if (!listMode.value) {
-    if (d.state === 'ok') return 'OK';
-    if (d.state === 'zero') return '0 命中';
-    if (d.state === 'multi') return `${d.count} 命中`;
-    return '—';
-  }
-  if (d.state === 'ok') return `${d.hitItems}/${d.sample}`;
-  if (d.state === 'partial') return `${d.hitItems}/${d.sample}`;
-  if (d.state === 'zero') return '0 命中';
-  if (d.state === 'multi') return `多(${d.hitItems}/${d.sample})`;
-  return '—';
-};
-
-const fieldDiagnosticColor = (index) => {
-  const d = fieldDiagnostics.value?.[index];
-  if (!d) return 'default';
-  if (d.state === 'ok') return 'green';
-  if (d.state === 'partial') return 'gold';
-  if (d.state === 'multi') return 'orange';
-  if (d.state === 'zero') return 'red';
-  if (d.state === 'invalid') return 'red';
-  return 'default';
-};
-
 const tableColumns = computed(() => {
   return fields
     .filter(f => f && f.name)
     .map(f => ({ title: f.name, dataIndex: f.name, key: f.name }));
 });
 
-const hasPreviewData = computed(() => {
-  if (listMode.value) {
-    return Array.isArray(previewResult.value) && previewResult.value.length > 0;
-  }
-  return previewResult.value && typeof previewResult.value === 'object' && Object.keys(previewResult.value).length > 0;
-});
-
-const previewCountText = computed(() => {
-  if (!processedHtml.value) return 'Ready';
-  if (listMode.value) {
-    const n = Array.isArray(previewResult.value) ? previewResult.value.length : 0;
-    return `${n} 条结果`;
-  }
-  return hasPreviewData.value ? '1 条结果' : '0 条结果';
-});
-
-const refreshTimer = ref(null);
-const scheduleRefreshPreview = () => {
-  if (refreshTimer.value) clearTimeout(refreshTimer.value);
-  refreshTimer.value = setTimeout(() => {
-    refreshPreview();
-  }, 250);
-};
-
-const refreshPreview = () => {
-  if (!rawHtml.value) return;
-  
-  const doc = getParsedDoc();
-  if (!doc) return;
-  
-  if (listMode.value && listSelector.value) {
-    // List Mode
-    const items = doc.querySelectorAll(listSelector.value);
-    const results = [];
-    items.forEach(item => {
-      const row = {};
-      fields.forEach(field => {
-        if (field.name && field.selector) {
-          const el = item.querySelector(field.selector);
-          row[field.name] = extractValue(el, field, targetUrl.value);
-        }
-      });
-      results.push(row);
-    });
-    previewResult.value = results;
-  } else {
-    // Single Mode
-    const row = {};
-    fields.forEach(field => {
-      if (field.name && field.selector) {
-        const el = doc.querySelector(field.selector);
-        row[field.name] = extractValue(el, field, targetUrl.value);
-      }
-    });
-    previewResult.value = row;
-  }
-};
-
-const extractValue = (el, field, baseUrl) => {
-  if (!el) return null;
-  let val = '';
-  switch (field.attr) {
-    case 'text': val = el.textContent.trim(); break;
-    case 'html': val = el.innerHTML; break;
-    case 'href': val = el.getAttribute('href'); break;
-    case 'src': val = el.getAttribute('src'); break;
-    case 'custom': val = el.getAttribute(field.customAttr); break;
-    default: val = el.textContent.trim();
-  }
-
-  if ((field.attr === 'href' || field.attr === 'src') && typeof val === 'string') {
-    val = safeResolveUrl(baseUrl, val);
-  }
-
-  // Transformations
-  if (val && field.transformType === 'regex' && field.transformPattern) {
-    try {
-      const re = new RegExp(field.transformPattern);
-      const match = val.match(re);
-      if (match) val = match[1] || match[0];
-    } catch (e) { console.warn('Regex Error', e); }
-  } else if (val && field.transformType === 'replace' && field.transformPattern) {
-    try {
-      val = val.replace(new RegExp(field.transformPattern, 'g'), field.transformReplacement || '');
-    } catch (e) { console.warn('Replace Error', e); }
-  } else if (val && field.transformType === 'trim') {
-      val = val.trim();
-  }
-
-  return val;
-};
-
-const previewDataJson = computed(() => {
-  return JSON.stringify(previewResult.value, null, 2);
-});
-
-const fieldSampleText = (fieldName) => {
-  if (!fieldName) return '—';
-  if (!hasPreviewData.value) return '—';
-  const row = listMode.value ? (Array.isArray(previewResult.value) ? previewResult.value[0] : null) : previewResult.value;
-  const val = row ? row[fieldName] : null;
-  if (val === null || val === undefined || val === '') return '—';
-  const str = String(val);
-  return str.length > 80 ? str.slice(0, 80) + '…' : str;
-};
-
-const copyPreviewData = async () => {
-  if (!hasPreviewData.value) return;
-  try {
-    await navigator.clipboard.writeText(previewDataJson.value);
-    message.success('已复制预览数据');
-  } catch (e) {
-    message.error('复制失败');
-  }
-};
-
-const detectListSelector = () => {
-  if (!rawHtml.value) {
-    message.warning('请先加载页面');
-    return;
-  }
-
-  try {
-    const doc = getParsedDoc();
-    if (!doc) {
-      message.error('页面解析失败');
-      return;
-    }
-    const body = doc.body;
-    if (!body) {
-      message.error('页面解析失败');
-      return;
-    }
-
-    let best = null;
-
-    const parents = body.querySelectorAll('*');
-    parents.forEach(parent => {
-      const children = Array.from(parent.children || []);
-      if (children.length < 6) return;
-
-      const counter = new Map();
-      children.forEach(ch => {
-        const tag = ch.tagName ? ch.tagName.toLowerCase() : '';
-        if (!tag) return;
-
-        const cls = (ch.getAttribute('class') || '').trim().split(/\s+/).filter(Boolean);
-        const key = cls.length ? '.' + cls[0] : tag;
-        counter.set(key, (counter.get(key) || 0) + 1);
-      });
-
-      for (const [key, count] of counter.entries()) {
-        if (count < 3) continue;
-        const score = count;
-        if (!best || score > best.score) {
-          best = { selector: key, score };
-        }
-      }
-    });
-
-    if (!best) {
-      message.info('未检测到明显的列表结构，请手动输入');
-      return;
-    }
-
-    listSelector.value = best.selector;
-    message.success(`已智能填入: ${best.selector}`);
-    scheduleRefreshPreview();
-  } catch (e) {
-    message.error('智能检测失败，请手动输入');
-  }
-};
-
-watch([fields, listMode, listSelector], () => {
-  scheduleRefreshPreview();
-}, { deep: true });
-
-const highlightSelectorInPreview = (selector) => {
-  const sel = (selector || '').trim();
-  if (!sel) return;
-  if (!processedHtml.value) return;
-  if (!previewFrame.value || !previewFrame.value.contentWindow) return;
-  previewFrame.value.contentWindow.postMessage({
-    type: 'highlight-selector',
-    selector: sel
-  }, '*');
-};
-
 const highlightFieldSelector = (index) => {
   if (!fields[index]) return;
   highlightSelectorInPreview(fields[index].selector);
 };
 
-
-// --- Code Generation ---
-
-const sanitizeIdentifier = (raw) => {
-  let s = String(raw || '').trim();
-  if (!s) return '';
-  s = s.replace(/\s+/g, '_');
-  s = s.replace(/[^a-zA-Z0-9_$]/g, '_');
-  s = s.replace(/_+/g, '_');
-  if (!/^[a-zA-Z_$]/.test(s)) s = '_' + s;
-  return s;
-};
-
-const isValidJsIdentifier = (name) => {
-  const s = String(name || '');
-  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(s);
-};
-
-const makeUniqueName = (base, used) => {
-  let n = base;
-  let i = 2;
-  while (used.has(n)) {
-    n = `${base}_${i}`;
-    i += 1;
-  }
-  used.add(n);
-  return n;
-};
-
-const buildFieldCodeMeta = () => {
-  const used = new Set();
-  return fields
-    .filter(f => f && f.name && f.selector)
-    .map((f, idx) => {
-      const key = String(f.name);
-      const base = sanitizeIdentifier(key) || `field_${idx + 1}`;
-      const varName = makeUniqueName(`val_${base}`, used);
-      return { f, key, varName };
-    });
-};
-
-const jsStringLiteral = (s) => JSON.stringify(String(s ?? ''));
-
-const pyStringLiteral = (s) => {
-  const str = String(s ?? '');
-  return `'${str
-    .replace(/\\/g, '\\\\')
-    .replace(/'/g, "\\'")
-    .replace(/\r/g, '\\r')
-    .replace(/\n/g, '\\n')
-  }'`;
-};
-
-const generatedCode = computed(() => {
-  if (codeLanguage.value === 'node') {
-    return generateNodeCode();
-  } else {
-    return generatePythonCode();
-  }
-});
-
-const showCodeModal = () => {
-  codeModalVisible.value = true;
-};
-
-const generateNodeCode = () => {
-  const metas = buildFieldCodeMeta();
-  const processField = (f, varName) => {
-    let code = '';
-    // Extraction
-    let extract = '';
-    switch(f.attr) {
-      case 'text': extract = '.text()'; break;
-      case 'html': extract = '.html()'; break;
-      case 'href': extract = '.attr("href")'; break;
-      case 'src': extract = '.attr("src")'; break;
-      case 'custom': extract = `.attr("${f.customAttr}")`; break;
-      default: extract = '.text()';
-    }
-    code += `    let ${varName} = el.find(${jsStringLiteral(f.selector)})${extract};\n`;
-    
-    // Default trim for text if no transform specified or explicit trim
-    if (f.attr === 'text' && f.transformType === 'none') {
-        code += `    if (${varName}) ${varName} = ${varName}.trim();\n`;
-    }
-
-    // Transformations
-    if (f.transformType === 'trim') {
-       code += `    if (${varName}) ${varName} = ${varName}.trim();\n`;
-    } else if (f.transformType === 'regex' && f.transformPattern) {
-       code += `    const ${varName}_match = ${varName} ? ${varName}.match(new RegExp(${jsStringLiteral(f.transformPattern)})) : null;\n`;
-       code += `    ${varName} = ${varName}_match ? (${varName}_match[1] || ${varName}_match[0]) : "";\n`;
-    } else if (f.transformType === 'replace' && f.transformPattern) {
-       code += `    if (${varName}) ${varName} = ${varName}.replace(new RegExp(${jsStringLiteral(f.transformPattern)}, 'g'), ${jsStringLiteral(f.transformReplacement || '')});\n`;
-    }
-    
-    return code;
-  };
-
-  const fieldsProcessing = metas
-    .map(({ f, varName }) => processField(f, varName))
-    .join('\n');
-
-  const fieldsAssignment = metas
-    .map(({ key, varName }) => `      ${isValidJsIdentifier(key) ? key : jsStringLiteral(key)}: ${varName}`)
-    .join(',\n');
-
-  if (listMode.value) {
-    return `const axios = require('axios');
-const cheerio = require('cheerio');
-
-async function scrape() {
-  const url = ${jsStringLiteral(targetUrl.value)};
-  const { data } = await axios.get(url, {
-     headers: ${JSON.stringify(requestHeaders.value.reduce((acc, h) => { if(h.key) acc[h.key] = h.value; return acc; }, {}), null, 4).replace(/\n/g, '\n     ')}
-  });
-  const $ = cheerio.load(data);
-  const results = [];
-
-  $(${jsStringLiteral(listSelector.value)}).each((i, element) => {
-    const el = $(element);
-${fieldsProcessing}
-    results.push({
-${fieldsAssignment}
-    });
-  });
-
-  console.log(JSON.stringify(results, null, 2));
-}
-
-scrape();`;
-  } else {
-    // Single mode structure
-    const singleProcessing = metas
-        .map(({ f, varName }) => {
-            // slightly different for single mode as root is $
-            let code = `    // ${f.name}\n`;
-            let selector = `$(${jsStringLiteral(f.selector)})`;
-            let extract = '';
-            switch(f.attr) {
-              case 'text': extract = '.text()'; break;
-              case 'html': extract = '.html()'; break;
-              case 'href': extract = '.attr("href")'; break;
-              case 'src': extract = '.attr("src")'; break;
-              case 'custom': extract = `.attr("${f.customAttr}")`; break;
-              default: extract = '.text()';
-            }
-            code += `    let ${varName} = ${selector}${extract};\n`;
-            if (f.attr === 'text' && f.transformType === 'none') {
-              code += `    if (${varName}) ${varName} = ${varName}.trim();\n`;
-            }
-            if (f.transformType === 'trim') {
-              code += `    if (${varName}) ${varName} = ${varName}.trim();\n`;
-            } else if (f.transformType === 'regex' && f.transformPattern) {
-              code += `    const ${varName}_match = ${varName} ? ${varName}.match(new RegExp(${jsStringLiteral(f.transformPattern)})) : null;\n`;
-              code += `    ${varName} = ${varName}_match ? (${varName}_match[1] || ${varName}_match[0]) : "";\n`;
-            } else if (f.transformType === 'replace' && f.transformPattern) {
-              code += `    if (${varName}) ${varName} = ${varName}.replace(new RegExp(${jsStringLiteral(f.transformPattern)}, 'g'), ${jsStringLiteral(f.transformReplacement || '')});\n`;
-            }
-            return code;
-        }).join('\n');
-
-    return `const axios = require('axios');
-const cheerio = require('cheerio');
-
-async function scrape() {
-  const url = ${jsStringLiteral(targetUrl.value)};
-  const { data } = await axios.get(url, {
-     headers: ${JSON.stringify(requestHeaders.value.reduce((acc, h) => { if(h.key) acc[h.key] = h.value; return acc; }, {}), null, 4).replace(/\n/g, '\n     ')}
-  });
-  const $ = cheerio.load(data);
-
-${singleProcessing}
-  const result = {
-${fieldsAssignment}
-  };
-
-  console.log(JSON.stringify(result, null, 2));
-}
-
-scrape();`;
-  }
-};
-
-const generatePythonCode = () => {
-    const metas = buildFieldCodeMeta();
-    const processField = (f, varName, isList) => {
-        let code = '';
-        let elVar = isList ? 'el' : 'soup';
-        let selectMethod = isList ? 'select_one' : 'select_one';
-        
-        code += `        element = ${elVar}.${selectMethod}(${pyStringLiteral(f.selector)})\n`;
-        
-        let extract = '';
-        switch(f.attr) {
-            case 'text': extract = '.get_text()'; break; // trim handled later
-            case 'html': extract = '.decode_contents()'; break;
-            case 'href': extract = '.get("href")'; break;
-            case 'src': extract = '.get("src")'; break;
-            case 'custom': extract = `.get("${f.customAttr}")`; break;
-            default: extract = '.get_text()';
-        }
-        
-        code += `        ${varName} = element${extract} if element else None\n`;
-        
-        // Transforms
-        if (f.attr === 'text' && f.transformType === 'none') {
-             code += `        if ${varName}: ${varName} = ${varName}.strip()\n`;
-        }
-        if (f.transformType === 'trim') {
-             code += `        if ${varName}: ${varName} = ${varName}.strip()\n`;
-        } else if (f.transformType === 'regex' && f.transformPattern) {
-             code += `        if ${varName}:\n`;
-             code += `            match = re.search(${pyStringLiteral(f.transformPattern)}, ${varName})\n`;
-             code += `            ${varName} = match.group(1) if match and match.lastindex and match.lastindex >= 1 else (match.group(0) if match else "")\n`;
-        } else if (f.transformType === 'replace' && f.transformPattern) {
-             code += `        if ${varName}: ${varName} = re.sub(${pyStringLiteral(f.transformPattern)}, ${pyStringLiteral(f.transformReplacement || '')}, ${varName})\n`;
-        }
-        
-        return code;
-    };
-
-  const fieldsAssignment = metas
-    .map(({ key, varName }) => `            ${pyStringLiteral(key)}: ${varName}`)
-    .join(',\n');
-
-  if (listMode.value) {
-    const fieldProcessors = metas
-        .map(({ f, varName }) => processField(f, varName, true))
-        .join('\n');
-
-    return `import requests
-from bs4 import BeautifulSoup
-import json
-import re
-
-def scrape():
-    url = ${pyStringLiteral(targetUrl.value)}
-    headers = ${JSON.stringify(requestHeaders.value.reduce((acc, h) => { if(h.key) acc[h.key] = h.value; return acc; }, {}), null, 4).replace(/\n/g, '\n    ').replace(/true/g, 'True').replace(/false/g, 'False')}
-    response = requests.get(url, headers=headers)
-    soup = BeautifulSoup(response.text, 'html.parser')
-    
-    results = []
-    for el in soup.select(${pyStringLiteral(listSelector.value)}):
-${fieldProcessors}
-        results.append({
-${fieldsAssignment}
-        })
-
-    print(json.dumps(results, indent=2, ensure_ascii=False))
-
-if __name__ == "__main__":
-    scrape()`;
-  } else {
-    const fieldProcessors = metas
-        .map(({ f, varName }) => processField(f, varName, false))
-        .join('\n')
-        .replace(/^        /gm, '    '); // Adjust indent for non-loop
-
-    return `import requests
-from bs4 import BeautifulSoup
-import json
-import re
-
-def scrape():
-    url = ${pyStringLiteral(targetUrl.value)}
-    headers = ${JSON.stringify(requestHeaders.value.reduce((acc, h) => { if(h.key) acc[h.key] = h.value; return acc; }, {}), null, 4).replace(/\n/g, '\n    ').replace(/true/g, 'True').replace(/false/g, 'False')}
-    response = requests.get(url, headers=headers)
-    soup = BeautifulSoup(response.text, 'html.parser')
-    
-${fieldProcessors}
-    data = {
-${fieldsAssignment}
-    }
-
-    print(json.dumps(data, indent=2, ensure_ascii=False))
-
-if __name__ == "__main__":
-    scrape()`;
-  }
-};
-
-const copyCode = async () => {
-  try {
-    await navigator.clipboard.writeText(generatedCode.value);
-    message.success('复制成功');
-  } catch (e) {
-    message.error('复制失败');
-  }
-};
-
-const downloadCode = () => {
-  const ext = codeLanguage.value === 'node' ? 'js' : 'py';
-  const blob = new Blob([generatedCode.value], { type: 'text/plain' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `scraper.${ext}`;
-  a.click();
-  URL.revokeObjectURL(url);
-};
 
 </script>
 

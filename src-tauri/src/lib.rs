@@ -7,13 +7,18 @@ use monitor::start_monitor;
 use parking_lot::Mutex;
 use player::Player;
 use recorder::{RecordedEvent, Recorder};
+use regex::Regex;
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, HashMap};
+use std::fs::File;
+use std::io::{BufWriter, Write};
 use std::path::Path;
 use std::process::Command as StdCommand;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use sysinfo::{Disks, Networks, System};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 use encoding_rs::Encoding;
 
@@ -24,6 +29,509 @@ struct SystemInfo {
     kernel_version: String,
     hostname: String,
     architecture: String,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct NovelJsonKeys {
+    title: String,
+    content: String,
+    url: String,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct NovelCrawlExportRequest {
+    urls: Vec<String>,
+    output_path: String,
+    export_format: String, // "txt" | "json"
+    title_selector: String,
+    content_selector: String,
+    headers: Option<HashMap<String, String>>,
+    timeout_ms: Option<u64>,
+    proxy_url: Option<String>,
+    accept_invalid_certs: Option<bool>,
+    concurrency: Option<u8>,
+    delay_ms: Option<u64>,
+    retry: Option<u32>,
+    max_pages: Option<u32>,
+    include_url_line: Option<bool>,
+    clean_regex_lines: Option<Vec<String>>,
+    json_keys: Option<NovelJsonKeys>,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct NovelCrawlProgressPayload {
+    run_id: u64,
+    processed: u32,
+    total: u32,
+    succeeded: u32,
+    failed: u32,
+    url: Option<String>,
+    message: Option<String>,
+    error: Option<String>,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct NovelCrawlFinishedPayload {
+    run_id: u64,
+    ok: bool,
+    canceled: bool,
+    processed: u32,
+    succeeded: u32,
+    failed: u32,
+    total: u32,
+}
+
+#[derive(Default)]
+struct NovelCrawlCancelState {
+    flags: Arc<Mutex<HashMap<u64, Arc<AtomicBool>>>>,
+}
+
+#[tauri::command]
+fn novel_crawl_cancel(state: tauri::State<NovelCrawlCancelState>, run_id: u64) -> Result<bool, String> {
+    let flags = state.flags.lock();
+    if let Some(flag) = flags.get(&run_id) {
+        flag.store(true, Ordering::SeqCst);
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+fn build_clean_regexes(lines: &[String]) -> Vec<Regex> {
+    let mut out = Vec::new();
+    for line in lines {
+        let s = line.trim();
+        if s.is_empty() {
+            continue;
+        }
+        if let Ok(re) = Regex::new(s) {
+            out.push(re);
+        }
+    }
+    out
+}
+
+fn clean_text(mut s: String, res: &[Regex]) -> String {
+    // keep behavior minimal: apply user regex deletions and normalize whitespace
+    for re in res {
+        s = re.replace_all(&s, "").to_string();
+    }
+    s = s.replace('\r', "");
+    // normalize a bit; avoid over-aggressive trimming
+    let s = s
+        .split('\n')
+        .map(|line| line.trim_end())
+        .collect::<Vec<_>>()
+        .join("\n");
+    s.trim().to_string()
+}
+
+fn fetch_url_decoded_with_client(
+    client: &reqwest::blocking::Client,
+    url: &str,
+    headers: &Option<HashMap<String, String>>,
+) -> Result<String, String> {
+    let mut request = client.get(url);
+    if let Some(hdrs) = headers.as_ref() {
+        for (k, v) in hdrs {
+            if k.trim().is_empty() {
+                continue;
+            }
+            request = request.header(k, v);
+        }
+    }
+
+    let resp = request.send().map_err(|e| format!("failed to fetch: {e}"))?;
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(format!("HTTP Error: {}", status.as_u16()));
+    }
+
+    let content_type = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+
+    let bytes = resp.bytes().map_err(|e| format!("failed to read bytes: {e}"))?;
+    let header_charset = sniff_charset_from_content_type(&content_type);
+    if header_charset.is_some() {
+        let s = decode_bytes_with_charset(&bytes, header_charset.as_deref());
+        if should_fallback_to_heuristic(&s) {
+            return Ok(choose_best_decoding(&bytes));
+        }
+        return Ok(s);
+    }
+
+    let head_len = std::cmp::min(4096, bytes.len());
+    let head = &bytes[..head_len];
+    let head_latin1: String = head.iter().map(|b| *b as char).collect();
+    let meta_charset = sniff_charset_from_html_meta(&head_latin1);
+    if meta_charset.is_some() {
+        let s = decode_bytes_with_charset(&bytes, meta_charset.as_deref());
+        if should_fallback_to_heuristic(&s) {
+            return Ok(choose_best_decoding(&bytes));
+        }
+        return Ok(s);
+    }
+
+    Ok(choose_best_decoding(&bytes))
+}
+
+fn extract_text_by_selector(html: &str, selector: &str) -> Result<String, String> {
+    if selector.trim().is_empty() {
+        return Ok(String::new());
+    }
+    let doc = Html::parse_document(html);
+    let sel = Selector::parse(selector).map_err(|e| format!("Invalid CSS selector: {e:?}"))?;
+    let mut parts = Vec::new();
+    for el in doc.select(&sel) {
+        let t = el.text().collect::<Vec<_>>().join("");
+        let t = t.trim();
+        if !t.is_empty() {
+            parts.push(t.to_string());
+        }
+    }
+    Ok(parts.join("\n"))
+}
+
+#[tauri::command]
+fn novel_crawl_export(
+    app: tauri::AppHandle,
+    state: tauri::State<NovelCrawlCancelState>,
+    req: NovelCrawlExportRequest,
+) -> Result<u64, String> {
+    if req.urls.is_empty() {
+        return Err("urls is empty".to_string());
+    }
+    if req.output_path.trim().is_empty() {
+        return Err("outputPath is empty".to_string());
+    }
+    let format = req.export_format.to_lowercase();
+    if format != "txt" && format != "json" {
+        return Err("exportFormat must be 'txt' or 'json'".to_string());
+    }
+
+    let urls = req.urls.clone();
+    let output_path = req.output_path.clone();
+    let title_selector = req.title_selector.clone();
+    let content_selector = req.content_selector.clone();
+    let headers = req.headers.clone();
+    let include_url_line = req.include_url_line.unwrap_or(false);
+    let clean_lines = req.clean_regex_lines.clone().unwrap_or_default();
+    let clean_res = build_clean_regexes(&clean_lines);
+    let json_keys = req.json_keys.clone().unwrap_or(NovelJsonKeys {
+        title: "title".to_string(),
+        content: "content".to_string(),
+        url: "url".to_string(),
+    });
+
+    let concurrency = req.concurrency.unwrap_or(2).clamp(1, 8) as usize;
+    let delay_ms = req.delay_ms.unwrap_or(0);
+    let retry = req.retry.unwrap_or(1);
+    let max_pages = req.max_pages.unwrap_or(u32::MAX) as usize;
+
+    // build client (blocking)
+    let mut builder = reqwest::blocking::Client::builder();
+    if let Some(ms) = req.timeout_ms {
+        builder = builder.timeout(std::time::Duration::from_millis(ms));
+    }
+    if req.accept_invalid_certs.unwrap_or(false) {
+        builder = builder.danger_accept_invalid_certs(true);
+    }
+    if let Some(p) = req.proxy_url.as_ref() {
+        if !p.trim().is_empty() {
+            builder = builder.proxy(reqwest::Proxy::all(p).map_err(|e| format!("invalid proxy: {e}"))?);
+        }
+    }
+    let client = builder.build().map_err(|e| format!("failed to build client: {e}"))?;
+
+    let run_id = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let total = std::cmp::min(urls.len(), max_pages) as u32;
+
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    {
+        let mut flags = state.flags.lock();
+        flags.insert(run_id, Arc::clone(&cancel_flag));
+    }
+
+    std::thread::spawn(move || {
+        let processed: u32 = 0;
+        let succeeded: u32 = 0;
+        let failed: u32 = 0;
+
+        let progress_emit = |app: &tauri::AppHandle, url: Option<String>, message: Option<String>, error: Option<String>, processed: u32, succeeded: u32, failed: u32, total: u32| {
+            let payload = NovelCrawlProgressPayload {
+                run_id,
+                processed,
+                total,
+                succeeded,
+                failed,
+                url,
+                message,
+                error,
+            };
+            let _ = app.emit("novel-crawl-progress", payload);
+        };
+
+        progress_emit(&app, None, Some("started".to_string()), None, processed, succeeded, failed, total);
+
+        let file = match File::create(&output_path) {
+            Ok(f) => f,
+            Err(e) => {
+                progress_emit(&app, None, Some("failed".to_string()), Some(format!("failed to create output file: {e}")), processed, succeeded, failed, total);
+                let _ = app.emit(
+                    "novel-crawl-finished",
+                    NovelCrawlFinishedPayload {
+                        run_id,
+                        ok: false,
+                        canceled: false,
+                        processed,
+                        succeeded,
+                        failed,
+                        total,
+                    },
+                );
+                return;
+            }
+        };
+        let writer = BufWriter::new(file);
+
+        // We fetch concurrently but write in chapter order.
+        // Workers send (index -> chapter result) to the writer loop.
+        use std::sync::atomic::AtomicUsize;
+        use std::sync::{mpsc, Arc};
+
+        #[derive(Clone)]
+        struct ChapterResult {
+            idx: usize,
+            url: String,
+            ok: bool,
+            title: String,
+            content: String,
+            err: Option<String>,
+        }
+
+        let (tx, rx) = mpsc::channel::<ChapterResult>();
+        let cursor = Arc::new(AtomicUsize::new(0));
+
+        let urls_arc = Arc::new(urls);
+        let headers_arc = Arc::new(headers);
+        let clean_res_arc = Arc::new(clean_res);
+        let title_selector_arc = Arc::new(title_selector);
+        let content_selector_arc = Arc::new(content_selector);
+        let json_keys_arc = Arc::new(json_keys);
+
+        let mut handles = Vec::new();
+        for _ in 0..concurrency {
+            let cursor = Arc::clone(&cursor);
+            let urls = Arc::clone(&urls_arc);
+            let headers = Arc::clone(&headers_arc);
+            let clean_res = Arc::clone(&clean_res_arc);
+            let title_selector = Arc::clone(&title_selector_arc);
+            let content_selector = Arc::clone(&content_selector_arc);
+            let tx = tx.clone();
+            let client = client.clone();
+            let cancel_flag = Arc::clone(&cancel_flag);
+
+            handles.push(std::thread::spawn(move || {
+                loop {
+                    if cancel_flag.load(Ordering::SeqCst) {
+                        break;
+                    }
+                    let idx = cursor.fetch_add(1, Ordering::SeqCst);
+                    if idx >= total as usize {
+                        break;
+                    }
+                    let url = urls.get(idx).cloned().unwrap_or_default();
+                    if url.is_empty() {
+                        let _ = tx.send(ChapterResult {
+                            idx,
+                            url,
+                            ok: false,
+                            title: String::new(),
+                            content: String::new(),
+                            err: Some("empty url".to_string()),
+                        });
+                        continue;
+                    }
+
+                    let mut ok = false;
+                    let mut title = String::new();
+                    let mut content = String::new();
+                    let mut last_err: Option<String> = None;
+
+                    for attempt in 0..=retry {
+                        if cancel_flag.load(Ordering::SeqCst) {
+                            break;
+                        }
+                        match fetch_url_decoded_with_client(&client, &url, &headers) {
+                            Ok(html) => {
+                                let t = extract_text_by_selector(&html, &title_selector).unwrap_or_default();
+                                let c = extract_text_by_selector(&html, &content_selector).unwrap_or_default();
+                                title = t;
+                                content = clean_text(c, &clean_res);
+                                ok = true;
+                                break;
+                            }
+                            Err(e) => {
+                                last_err = Some(e);
+                                if attempt < retry {
+                                    std::thread::sleep(std::time::Duration::from_millis(200));
+                                }
+                            }
+                        }
+                    }
+
+                    if cancel_flag.load(Ordering::SeqCst) {
+                        break;
+                    }
+
+                    let _ = tx.send(ChapterResult {
+                        idx,
+                        url,
+                        ok,
+                        title,
+                        content,
+                        err: if ok { None } else { last_err },
+                    });
+
+                    if delay_ms > 0 {
+                        std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+                    }
+                }
+            }));
+        }
+        drop(tx);
+
+        let mut writer = writer;
+        let mut json_first = true;
+        if format == "json" {
+            if let Err(e) = writer.write_all(b"[") {
+                progress_emit(&app, None, Some("failed".to_string()), Some(format!("write error: {e}")), processed, succeeded, failed, total);
+                let _ = app.emit(
+                    "novel-crawl-finished",
+                    NovelCrawlFinishedPayload {
+                        run_id,
+                        ok: false,
+                        canceled: false,
+                        processed,
+                        succeeded,
+                        failed,
+                        total,
+                    },
+                );
+                return;
+            }
+        }
+
+        let mut next_write_idx: usize = 0;
+        let mut buffer: BTreeMap<usize, ChapterResult> = BTreeMap::new();
+        let mut p = processed;
+        let mut s = succeeded;
+        let mut f = failed;
+
+        for item in rx {
+            if cancel_flag.load(Ordering::SeqCst) {
+                break;
+            }
+            buffer.insert(item.idx, item);
+            while let Some(item) = buffer.remove(&next_write_idx) {
+                // write in order
+                if format == "txt" {
+                    if !item.title.trim().is_empty() {
+                        let _ = writeln!(writer, "{}", item.title.trim());
+                    }
+                    if include_url_line {
+                        let _ = writeln!(writer, "{}", item.url);
+                    }
+                    if !item.content.trim().is_empty() {
+                        let _ = writeln!(writer, "{}", item.content.trim());
+                    }
+                    let _ = writeln!(writer);
+                    let _ = writeln!(writer);
+                } else {
+                    let json_keys = &*json_keys_arc;
+                    let mut obj = serde_json::Map::new();
+                    obj.insert(json_keys.title.clone(), serde_json::Value::String(item.title.trim().to_string()));
+                    obj.insert(json_keys.content.clone(), serde_json::Value::String(item.content.trim().to_string()));
+                    obj.insert(json_keys.url.clone(), serde_json::Value::String(item.url.clone()));
+                    let v = serde_json::Value::Object(obj);
+                    if !json_first {
+                        let _ = writer.write_all(b",");
+                    }
+                    json_first = false;
+                    let _ = serde_json::to_writer(&mut writer, &v);
+                }
+                let _ = writer.flush();
+
+                // stats
+                p += 1;
+                if item.ok {
+                    s += 1;
+                } else {
+                    f += 1;
+                }
+
+                let msg = if item.ok {
+                    None
+                } else {
+                    Some("failed".to_string())
+                };
+                let err = if item.ok {
+                    None
+                } else {
+                    Some(item.err.unwrap_or_else(|| "unknown".to_string()))
+                };
+                let payload = NovelCrawlProgressPayload {
+                    run_id,
+                    processed: p,
+                    total,
+                    succeeded: s,
+                    failed: f,
+                    url: Some(item.url.clone()),
+                    message: msg,
+                    error: err,
+                };
+                let _ = app.emit("novel-crawl-progress", payload);
+
+                next_write_idx += 1;
+            }
+        }
+
+        for h in handles {
+            let _ = h.join();
+        }
+
+        let canceled = cancel_flag.load(Ordering::SeqCst);
+
+        if format == "json" {
+            let _ = writer.write_all(b"]");
+            let _ = writer.flush();
+        }
+
+        let _ = app.emit(
+            "novel-crawl-finished",
+            NovelCrawlFinishedPayload {
+                run_id,
+                ok: !canceled,
+                canceled,
+                processed: p,
+                succeeded: s,
+                failed: f,
+                total,
+            },
+        );
+    });
+
+    Ok(run_id)
 }
 
 #[derive(Serialize, Deserialize)]
@@ -567,6 +1075,8 @@ pub fn run() {
         events: Arc::clone(&events),
     };
 
+    let novel_crawl_cancel_state = NovelCrawlCancelState::default();
+
     // 启动全局输入监控
     start_monitor(Arc::clone(&recorder), Arc::clone(&player));
 
@@ -586,6 +1096,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_http::init())
         .manage(recorder_state)
+        .manage(novel_crawl_cancel_state)
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -699,6 +1210,8 @@ pub fn run() {
             fetch_url_decoded,
             parse_html_by_selector,
             scrape_page,
+            novel_crawl_export,
+            novel_crawl_cancel,
             launch_app,
             open_app_folder,
             start_record,

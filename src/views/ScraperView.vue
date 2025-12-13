@@ -1783,6 +1783,9 @@ const injectInspectorScript = (html, baseUrl) => {
         window.addEventListener('message', (event) => {
           if (event.data.type === 'toggle-inspector') {
             active = event.data.active;
+            try {
+              document.documentElement.classList.toggle('scraper-inspector-active', !!active);
+            } catch (e) {}
             if (!active && highlighted) {
               highlighted.style.outline = '';
               highlighted = null;
@@ -1921,8 +1924,9 @@ const injectInspectorScript = (html, baseUrl) => {
       })();
     <\/script>
     <style>
-      /* Prevent pointer events on iframes/objects to allow selection over them */
-      iframe, object, embed { pointer-events: none; }
+      .scraper-inspector-active iframe,
+      .scraper-inspector-active object,
+      .scraper-inspector-active embed { pointer-events: none; }
     </style>
   `;
   
@@ -1937,6 +1941,7 @@ const toggleInspector = () => {
 watch(isInspectorActive, (active) => {
    if (!rawHtml.value) {
      if(active) message.warning("请先加载页面");
+     if (active) isInspectorActive.value = false;
      return;
    }
    if (previewFrame.value && previewFrame.value.contentWindow) {
@@ -2350,6 +2355,56 @@ const highlightFieldSelector = (index) => {
 
 // --- Code Generation ---
 
+const sanitizeIdentifier = (raw) => {
+  let s = String(raw || '').trim();
+  if (!s) return '';
+  s = s.replace(/\s+/g, '_');
+  s = s.replace(/[^a-zA-Z0-9_$]/g, '_');
+  s = s.replace(/_+/g, '_');
+  if (!/^[a-zA-Z_$]/.test(s)) s = '_' + s;
+  return s;
+};
+
+const isValidJsIdentifier = (name) => {
+  const s = String(name || '');
+  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(s);
+};
+
+const makeUniqueName = (base, used) => {
+  let n = base;
+  let i = 2;
+  while (used.has(n)) {
+    n = `${base}_${i}`;
+    i += 1;
+  }
+  used.add(n);
+  return n;
+};
+
+const buildFieldCodeMeta = () => {
+  const used = new Set();
+  return fields
+    .filter(f => f && f.name && f.selector)
+    .map((f, idx) => {
+      const key = String(f.name);
+      const base = sanitizeIdentifier(key) || `field_${idx + 1}`;
+      const varName = makeUniqueName(`val_${base}`, used);
+      return { f, key, varName };
+    });
+};
+
+const jsStringLiteral = (s) => JSON.stringify(String(s ?? ''));
+
+const pyStringLiteral = (s) => {
+  const str = String(s ?? '');
+  return `'${str
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/\r/g, '\\r')
+    .replace(/\n/g, '\\n')
+  }'`;
+};
+
 const generatedCode = computed(() => {
   if (codeLanguage.value === 'node') {
     return generateNodeCode();
@@ -2363,6 +2418,7 @@ const showCodeModal = () => {
 };
 
 const generateNodeCode = () => {
+  const metas = buildFieldCodeMeta();
   const processField = (f, varName) => {
     let code = '';
     // Extraction
@@ -2375,7 +2431,7 @@ const generateNodeCode = () => {
       case 'custom': extract = `.attr("${f.customAttr}")`; break;
       default: extract = '.text()';
     }
-    code += `    let ${varName} = el.find('${f.selector}')${extract};\n`;
+    code += `    let ${varName} = el.find(${jsStringLiteral(f.selector)})${extract};\n`;
     
     // Default trim for text if no transform specified or explicit trim
     if (f.attr === 'text' && f.transformType === 'none') {
@@ -2386,23 +2442,21 @@ const generateNodeCode = () => {
     if (f.transformType === 'trim') {
        code += `    if (${varName}) ${varName} = ${varName}.trim();\n`;
     } else if (f.transformType === 'regex' && f.transformPattern) {
-       code += `    const ${varName}_match = ${varName} ? ${varName}.match(new RegExp('${f.transformPattern.replace(/\\/g, '\\\\')}')) : null;\n`;
+       code += `    const ${varName}_match = ${varName} ? ${varName}.match(new RegExp(${jsStringLiteral(f.transformPattern)})) : null;\n`;
        code += `    ${varName} = ${varName}_match ? (${varName}_match[1] || ${varName}_match[0]) : "";\n`;
     } else if (f.transformType === 'replace' && f.transformPattern) {
-       code += `    if (${varName}) ${varName} = ${varName}.replace(new RegExp('${f.transformPattern.replace(/\\/g, '\\\\')}', 'g'), '${f.transformReplacement || ''}');\n`;
+       code += `    if (${varName}) ${varName} = ${varName}.replace(new RegExp(${jsStringLiteral(f.transformPattern)}, 'g'), ${jsStringLiteral(f.transformReplacement || '')});\n`;
     }
     
     return code;
   };
 
-  const fieldsProcessing = fields
-    .filter(f => f.name && f.selector)
-    .map(f => processField(f, `val_${f.name}`))
+  const fieldsProcessing = metas
+    .map(({ f, varName }) => processField(f, varName))
     .join('\n');
 
-  const fieldsAssignment = fields
-    .filter(f => f.name && f.selector)
-    .map(f => `      ${f.name}: val_${f.name}`)
+  const fieldsAssignment = metas
+    .map(({ key, varName }) => `      ${isValidJsIdentifier(key) ? key : jsStringLiteral(key)}: ${varName}`)
     .join(',\n');
 
   if (listMode.value) {
@@ -2410,14 +2464,14 @@ const generateNodeCode = () => {
 const cheerio = require('cheerio');
 
 async function scrape() {
-  const url = '${targetUrl.value}';
+  const url = ${jsStringLiteral(targetUrl.value)};
   const { data } = await axios.get(url, {
      headers: ${JSON.stringify(requestHeaders.value.reduce((acc, h) => { if(h.key) acc[h.key] = h.value; return acc; }, {}), null, 4).replace(/\n/g, '\n     ')}
   });
   const $ = cheerio.load(data);
   const results = [];
 
-  $('${listSelector.value}').each((i, element) => {
+  $(${jsStringLiteral(listSelector.value)}).each((i, element) => {
     const el = $(element);
 ${fieldsProcessing}
     results.push({
@@ -2431,13 +2485,12 @@ ${fieldsAssignment}
 scrape();`;
   } else {
     // Single mode structure
-    const singleProcessing = fields
-        .filter(f => f.name && f.selector)
-        .map(f => {
+    const singleProcessing = metas
+        .map(({ f, varName }) => {
             // slightly different for single mode as root is $
             let code = `    // ${f.name}\n`;
-            let selector = `$('${f.selector}')`;
-             let extract = '';
+            let selector = `$(${jsStringLiteral(f.selector)})`;
+            let extract = '';
             switch(f.attr) {
               case 'text': extract = '.text()'; break;
               case 'html': extract = '.html()'; break;
@@ -2446,17 +2499,17 @@ scrape();`;
               case 'custom': extract = `.attr("${f.customAttr}")`; break;
               default: extract = '.text()';
             }
-            code += `    let val_${f.name} = ${selector}${extract};\n`;
-             if (f.attr === 'text' && f.transformType === 'none') {
-                code += `    if (val_${f.name}) val_${f.name} = val_${f.name}.trim();\n`;
+            code += `    let ${varName} = ${selector}${extract};\n`;
+            if (f.attr === 'text' && f.transformType === 'none') {
+              code += `    if (${varName}) ${varName} = ${varName}.trim();\n`;
             }
             if (f.transformType === 'trim') {
-               code += `    if (val_${f.name}) val_${f.name} = val_${f.name}.trim();\n`;
+              code += `    if (${varName}) ${varName} = ${varName}.trim();\n`;
             } else if (f.transformType === 'regex' && f.transformPattern) {
-               code += `    const match_${f.name} = val_${f.name} ? val_${f.name}.match(new RegExp('${f.transformPattern.replace(/\\/g, '\\\\')}')) : null;\n`;
-               code += `    val_${f.name} = match_${f.name} ? (match_${f.name}[1] || match_${f.name}[0]) : "";\n`;
+              code += `    const ${varName}_match = ${varName} ? ${varName}.match(new RegExp(${jsStringLiteral(f.transformPattern)})) : null;\n`;
+              code += `    ${varName} = ${varName}_match ? (${varName}_match[1] || ${varName}_match[0]) : "";\n`;
             } else if (f.transformType === 'replace' && f.transformPattern) {
-               code += `    if (val_${f.name}) val_${f.name} = val_${f.name}.replace(new RegExp('${f.transformPattern.replace(/\\/g, '\\\\')}', 'g'), '${f.transformReplacement || ''}');\n`;
+              code += `    if (${varName}) ${varName} = ${varName}.replace(new RegExp(${jsStringLiteral(f.transformPattern)}, 'g'), ${jsStringLiteral(f.transformReplacement || '')});\n`;
             }
             return code;
         }).join('\n');
@@ -2465,7 +2518,7 @@ scrape();`;
 const cheerio = require('cheerio');
 
 async function scrape() {
-  const url = '${targetUrl.value}';
+  const url = ${jsStringLiteral(targetUrl.value)};
   const { data } = await axios.get(url, {
      headers: ${JSON.stringify(requestHeaders.value.reduce((acc, h) => { if(h.key) acc[h.key] = h.value; return acc; }, {}), null, 4).replace(/\n/g, '\n     ')}
   });
@@ -2484,12 +2537,13 @@ scrape();`;
 };
 
 const generatePythonCode = () => {
+    const metas = buildFieldCodeMeta();
     const processField = (f, varName, isList) => {
         let code = '';
         let elVar = isList ? 'el' : 'soup';
         let selectMethod = isList ? 'select_one' : 'select_one';
         
-        code += `        element = ${elVar}.${selectMethod}('${f.selector}')\n`;
+        code += `        element = ${elVar}.${selectMethod}(${pyStringLiteral(f.selector)})\n`;
         
         let extract = '';
         switch(f.attr) {
@@ -2511,24 +2565,22 @@ const generatePythonCode = () => {
              code += `        if ${varName}: ${varName} = ${varName}.strip()\n`;
         } else if (f.transformType === 'regex' && f.transformPattern) {
              code += `        if ${varName}:\n`;
-             code += `            match = re.search(r'${f.transformPattern.replace(/\\/g, '\\\\')}', ${varName})\n`;
+             code += `            match = re.search(${pyStringLiteral(f.transformPattern)}, ${varName})\n`;
              code += `            ${varName} = match.group(1) if match and match.lastindex and match.lastindex >= 1 else (match.group(0) if match else "")\n`;
         } else if (f.transformType === 'replace' && f.transformPattern) {
-             code += `        if ${varName}: ${varName} = re.sub(r'${f.transformPattern.replace(/\\/g, '\\\\')}', '${f.transformReplacement || ''}', ${varName})\n`;
+             code += `        if ${varName}: ${varName} = re.sub(${pyStringLiteral(f.transformPattern)}, ${pyStringLiteral(f.transformReplacement || '')}, ${varName})\n`;
         }
         
         return code;
     };
 
-  const fieldsAssignment = fields
-    .filter(f => f.name && f.selector)
-    .map(f => `            '${f.name}': val_${f.name}`)
+  const fieldsAssignment = metas
+    .map(({ key, varName }) => `            ${pyStringLiteral(key)}: ${varName}`)
     .join(',\n');
 
   if (listMode.value) {
-    const fieldProcessors = fields
-        .filter(f => f.name && f.selector)
-        .map(f => processField(f, `val_${f.name}`, true))
+    const fieldProcessors = metas
+        .map(({ f, varName }) => processField(f, varName, true))
         .join('\n');
 
     return `import requests
@@ -2537,13 +2589,13 @@ import json
 import re
 
 def scrape():
-    url = '${targetUrl.value}'
+    url = ${pyStringLiteral(targetUrl.value)}
     headers = ${JSON.stringify(requestHeaders.value.reduce((acc, h) => { if(h.key) acc[h.key] = h.value; return acc; }, {}), null, 4).replace(/\n/g, '\n    ').replace(/true/g, 'True').replace(/false/g, 'False')}
     response = requests.get(url, headers=headers)
     soup = BeautifulSoup(response.text, 'html.parser')
     
     results = []
-    for el in soup.select('${listSelector.value}'):
+    for el in soup.select(${pyStringLiteral(listSelector.value)}):
 ${fieldProcessors}
         results.append({
 ${fieldsAssignment}
@@ -2554,9 +2606,8 @@ ${fieldsAssignment}
 if __name__ == "__main__":
     scrape()`;
   } else {
-    const fieldProcessors = fields
-        .filter(f => f.name && f.selector)
-        .map(f => processField(f, `val_${f.name}`, false)) // Indent fixed in map? No, map returns string with indent
+    const fieldProcessors = metas
+        .map(({ f, varName }) => processField(f, varName, false))
         .join('\n')
         .replace(/^        /gm, '    '); // Adjust indent for non-loop
 
@@ -2566,7 +2617,7 @@ import json
 import re
 
 def scrape():
-    url = '${targetUrl.value}'
+    url = ${pyStringLiteral(targetUrl.value)}
     headers = ${JSON.stringify(requestHeaders.value.reduce((acc, h) => { if(h.key) acc[h.key] = h.value; return acc; }, {}), null, 4).replace(/\n/g, '\n    ').replace(/true/g, 'True').replace(/false/g, 'False')}
     response = requests.get(url, headers=headers)
     soup = BeautifulSoup(response.text, 'html.parser')

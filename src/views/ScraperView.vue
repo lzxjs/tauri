@@ -191,6 +191,11 @@
                           <div class="field-name">
                              <span class="field-index">#{{ index + 1 }}</span>
                              <a-input v-model:value="field.name" placeholder="字段名" size="small" class="field-name-input" :bordered="false" />
+                             <a-tag
+                               v-if="processedHtml"
+                               class="field-diag-tag"
+                               :color="fieldDiagnosticColor(index)"
+                             >{{ fieldDiagnosticText(index) }}</a-tag>
                           </div>
                           <div class="field-actions">
                              <a-tooltip title="复制">
@@ -757,7 +762,7 @@ import {
   StopOutlined,
   QuestionCircleOutlined
 } from '@ant-design/icons-vue';
-import { fetch } from '@tauri-apps/plugin-http';
+import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeTextFile } from '@tauri-apps/plugin-fs';
 
@@ -871,71 +876,6 @@ const normalizedUrl = (input) => {
   if (!str) return '';
   if (str.startsWith('http://') || str.startsWith('https://')) return str;
   return 'https://' + str;
-};
-
-const parseCharsetFromContentType = (contentType) => {
-  const ct = (contentType || '').toLowerCase();
-  const m = ct.match(/charset\s*=\s*([^;\s]+)/i);
-  return m ? String(m[1]).trim().toLowerCase() : '';
-};
-
-const parseCharsetFromHtmlMeta = (html) => {
-  const s = String(html || '');
-  const m1 = s.match(/<meta[^>]+charset\s*=\s*['\"]?([^'\"\s>]+)/i);
-  if (m1) return String(m1[1]).trim().toLowerCase();
-  const m2 = s.match(/<meta[^>]+http-equiv\s*=\s*['\"]content-type['\"][^>]*content\s*=\s*['\"][^'\"]*charset\s*=\s*([^'\"\s;>]+)/i);
-  if (m2) return String(m2[1]).trim().toLowerCase();
-  return '';
-};
-
-const normalizeDecoderLabel = (charset) => {
-  const c = (charset || '').toLowerCase();
-  if (!c) return '';
-  if (c === 'gbk' || c === 'gb2312' || c === 'gb-2312') return 'gb18030';
-  if (c === 'gb18030') return 'gb18030';
-  return c;
-};
-
-const decodeHtmlFromResponse = async (response) => {
-  try {
-    const buf = await response.arrayBuffer();
-    const ct = response.headers?.get ? response.headers.get('content-type') : '';
-    const headerCharset = normalizeDecoderLabel(parseCharsetFromContentType(ct));
-
-    const decodeWith = (label) => {
-      try {
-        return new TextDecoder(label || 'utf-8').decode(buf);
-      } catch (_) {
-        return new TextDecoder('utf-8').decode(buf);
-      }
-    };
-
-    if (headerCharset) return decodeWith(headerCharset);
-
-    try {
-      const headBuf = buf.slice(0, 4096);
-      const latin1 = new TextDecoder('iso-8859-1').decode(headBuf);
-      const sniffed = normalizeDecoderLabel(parseCharsetFromHtmlMeta(latin1) || parseCharsetFromContentType(latin1));
-      if (sniffed) return decodeWith(sniffed);
-    } catch (_) {
-      // ignore
-    }
-
-    const utf8Text = decodeWith('utf-8');
-    const metaCharset = normalizeDecoderLabel(parseCharsetFromHtmlMeta(utf8Text));
-    if (metaCharset && metaCharset !== 'utf-8') {
-      return decodeWith(metaCharset);
-    }
-
-    const replacementCount = (utf8Text.match(/\uFFFD/g) || []).length;
-    if (replacementCount > 20) {
-      const gbText = decodeWith('gb18030');
-      return gbText || utf8Text;
-    }
-    return utf8Text;
-  } catch (_) {
-    return await response.text();
-  }
 };
 
 const safeResolveUrl = (baseUrl, maybeUrl) => {
@@ -1480,20 +1420,16 @@ const buildRequestHeadersObject = () => {
 };
 
 const fetchHtmlForTask = async (url) => {
-  const response = await fetch(url, {
-    method: 'GET',
-    headers: buildRequestHeadersObject(),
-    connectTimeout: requestTimeout.value,
-    ...(proxyUrl.value ? { proxy: { all: proxyUrl.value } } : {}),
-    ...(acceptInvalidCerts.value
-      ? { danger: { acceptInvalidCerts: true, acceptInvalidHostnames: true } }
-      : {})
+  const html = await invoke('fetch_url_decoded', {
+    req: {
+      url,
+      headers: buildRequestHeadersObject(),
+      timeoutMs: requestTimeout.value,
+      proxyUrl: proxyUrl.value,
+      acceptInvalidCerts: acceptInvalidCerts.value
+    }
   });
-
-  if (!response.ok) {
-    throw new Error(`HTTP Error: ${response.status}`);
-  }
-  return await decodeHtmlFromResponse(response);
+  return String(html || '');
 };
 
 const crawlTableColumns = computed(() => {
@@ -1719,26 +1655,15 @@ const fetchPage = async () => {
   isInspectorActive.value = false;
   
   try {
-    const headers = {};
-    requestHeaders.value.forEach(h => {
-      if (h.key && h.value) headers[h.key] = h.value;
+    const html = await invoke('fetch_url_decoded', {
+      req: {
+        url: targetUrl.value,
+        headers: buildRequestHeadersObject(),
+        timeoutMs: requestTimeout.value,
+        proxyUrl: proxyUrl.value,
+        acceptInvalidCerts: acceptInvalidCerts.value
+      }
     });
-
-    const response = await fetch(targetUrl.value, {
-      method: 'GET',
-      headers: headers,
-      connectTimeout: requestTimeout.value,
-      ...(proxyUrl.value ? { proxy: { all: proxyUrl.value } } : {}),
-      ...(acceptInvalidCerts.value
-        ? { danger: { acceptInvalidCerts: true, acceptInvalidHostnames: true } }
-        : {})
-    });
-    
-    if (!response.ok) {
-      throw new Error(`HTTP Error: ${response.status}`);
-    }
-    
-    const html = await decodeHtmlFromResponse(response);
     rawHtml.value = html;
     processedHtml.value = injectInspectorScript(html, targetUrl.value);
     addToHistory(targetUrl.value);
@@ -1957,6 +1882,9 @@ const handleMessage = (event) => {
   if (event.data.type === 'element-selected') {
     if (currentFieldIndex.value !== -1 && fields[currentFieldIndex.value]) {
       fields[currentFieldIndex.value].selector = optimizeSelector(String(event.data.selector || ''));
+      if (isDefaultFieldName(fields[currentFieldIndex.value].name)) {
+        fields[currentFieldIndex.value].name = suggestFieldNameFromPick(event.data, currentFieldIndex.value);
+      }
       message.success(`已选择: ${event.data.tagName}`);
       // Refresh preview automatically
       scheduleRefreshPreview();
@@ -2112,6 +2040,34 @@ const getParsedDoc = () => {
   return doc;
 };
 
+const isDefaultFieldName = (name) => {
+  const s = String(name || '').trim();
+  return !s || /^field_\d+$/i.test(s);
+};
+
+const suggestFieldNameFromPick = (payload, index) => {
+  const tag = String(payload?.tagName || '').toLowerCase();
+  let text = String(payload?.text || '').trim();
+  text = text.replace(/\s+/g, ' ').trim();
+  text = text.replace(/[\u0000-\u001F]/g, '');
+  let base = text || tag || `field_${index + 1}`;
+  base = base.replace(/\s+/g, '_');
+  base = base.replace(/[^\w\u4e00-\u9fa5$-]/g, '_');
+  base = base.replace(/_+/g, '_');
+  base = base.replace(/^_+|_+$/g, '');
+  if (!base) base = tag || `field_${index + 1}`;
+  if (base.length > 20) base = base.slice(0, 20);
+
+  const used = new Set(fields.map(f => String(f?.name || '').trim()).filter(Boolean));
+  let candidate = base;
+  let i = 2;
+  while (used.has(candidate)) {
+    candidate = `${base}_${i}`;
+    i += 1;
+  }
+  return candidate;
+};
+
 const isSelectorUnique = (doc, selector) => {
   try {
     return doc.querySelectorAll(selector).length === 1;
@@ -2151,6 +2107,83 @@ const optimizeSelector = (selector) => {
   }
 
   return best;
+};
+
+const fieldDiagnostics = computed(() => {
+  const doc = getParsedDoc();
+  if (!doc) return [];
+  const modeList = !!listMode.value;
+  const listSel = (listSelector.value || '').trim();
+  let listItems = [];
+  if (modeList && listSel) {
+    try {
+      listItems = Array.from(doc.querySelectorAll(listSel));
+    } catch (_) {
+      listItems = [];
+    }
+  }
+  const sampleItems = listItems.length > 30 ? listItems.slice(0, 30) : listItems;
+
+  return fields.map((f) => {
+    const sel = (f && f.selector) ? String(f.selector).trim() : '';
+    if (!sel) return { state: 'empty' };
+    try {
+      if (!modeList) {
+        const n = doc.querySelectorAll(sel).length;
+        if (n === 0) return { state: 'zero', count: 0 };
+        if (n === 1) return { state: 'ok', count: 1 };
+        return { state: 'multi', count: n };
+      }
+
+      if (!listSel) return { state: 'needList' };
+      if (sampleItems.length === 0) return { state: 'noListItems' };
+      let hitItems = 0;
+      let totalMatches = 0;
+      for (const item of sampleItems) {
+        const c = item.querySelectorAll(sel).length;
+        if (c > 0) hitItems += 1;
+        totalMatches += c;
+      }
+      const avg = totalMatches / sampleItems.length;
+      if (hitItems === 0) return { state: 'zero', count: 0, hitItems, sample: sampleItems.length, avg };
+      if (hitItems < sampleItems.length) return { state: 'partial', count: totalMatches, hitItems, sample: sampleItems.length, avg };
+      if (avg > 1.01) return { state: 'multi', count: totalMatches, hitItems, sample: sampleItems.length, avg };
+      return { state: 'ok', count: totalMatches, hitItems, sample: sampleItems.length, avg };
+    } catch (_) {
+      return { state: 'invalid' };
+    }
+  });
+});
+
+const fieldDiagnosticText = (index) => {
+  const d = fieldDiagnostics.value?.[index];
+  if (!d) return '—';
+  if (d.state === 'empty') return '未设置';
+  if (d.state === 'invalid') return '选择器错误';
+  if (d.state === 'needList') return '需列表选择器';
+  if (d.state === 'noListItems') return '列表为空';
+  if (!listMode.value) {
+    if (d.state === 'ok') return 'OK';
+    if (d.state === 'zero') return '0 命中';
+    if (d.state === 'multi') return `${d.count} 命中`;
+    return '—';
+  }
+  if (d.state === 'ok') return `${d.hitItems}/${d.sample}`;
+  if (d.state === 'partial') return `${d.hitItems}/${d.sample}`;
+  if (d.state === 'zero') return '0 命中';
+  if (d.state === 'multi') return `多(${d.hitItems}/${d.sample})`;
+  return '—';
+};
+
+const fieldDiagnosticColor = (index) => {
+  const d = fieldDiagnostics.value?.[index];
+  if (!d) return 'default';
+  if (d.state === 'ok') return 'green';
+  if (d.state === 'partial') return 'gold';
+  if (d.state === 'multi') return 'orange';
+  if (d.state === 'zero') return 'red';
+  if (d.state === 'invalid') return 'red';
+  return 'default';
 };
 
 const tableColumns = computed(() => {
@@ -3054,6 +3087,12 @@ const downloadCode = () => {
    align-items: center;
    gap: 8px;
    flex: 1;
+}
+
+.field-diag-tag {
+  margin-left: 6px;
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .field-index {

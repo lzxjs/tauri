@@ -15,6 +15,8 @@ use std::sync::Arc;
 use sysinfo::{Disks, Networks, System};
 use tauri::Manager;
 
+use encoding_rs::Encoding;
+
 #[derive(Serialize, Deserialize)]
 struct SystemInfo {
     os_name: String,
@@ -220,6 +222,207 @@ fn fetch_url(url: String) -> Result<String, String> {
         },
         Err(e) => Err(format!("Failed to fetch URL: {}", e)),
     }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FetchDecodedRequest {
+    url: String,
+    headers: Option<std::collections::HashMap<String, String>>,
+    timeout_ms: Option<u64>,
+    proxy_url: Option<String>,
+    accept_invalid_certs: Option<bool>,
+}
+
+fn sniff_charset_from_content_type(content_type: &str) -> Option<String> {
+    let ct = content_type.to_lowercase();
+    let idx = ct.find("charset=")?;
+    let mut s = ct[idx + "charset=".len()..].trim().to_string();
+    if let Some(semi) = s.find(';') {
+        s = s[..semi].to_string();
+    }
+    s = s.trim_matches('"').trim_matches('\'').trim().to_string();
+    if s.is_empty() { None } else { Some(s) }
+}
+
+fn sniff_charset_from_html_meta(head_latin1: &str) -> Option<String> {
+    // Very small/fast sniff: handle <meta charset="gbk"> and http-equiv content-type
+    let s = head_latin1;
+    let lower = s.to_lowercase();
+    if let Some(pos) = lower.find("charset") {
+        let tail = &lower[pos..];
+        if let Some(eq) = tail.find('=') {
+            let mut v = tail[eq + 1..].trim().to_string();
+            // strip leading quotes
+            v = v.trim_start_matches('"').trim_start_matches('\'').to_string();
+            // read until quote/space/>
+            let end = v
+                .find(|c: char| c == '"' || c == '\'' || c.is_whitespace() || c == '>' || c == ';')
+                .unwrap_or(v.len());
+            let cs = v[..end].trim().to_string();
+            if !cs.is_empty() {
+                return Some(cs);
+            }
+        }
+    }
+    None
+}
+
+fn normalize_charset_label(charset: &str) -> String {
+    let c = charset.trim().to_lowercase();
+    if c == "gbk" || c == "gb2312" || c == "gb-2312" {
+        return "gb18030".to_string();
+    }
+    if c == "gb18030" {
+        return "gb18030".to_string();
+    }
+    c
+}
+
+fn decode_bytes_with_charset(bytes: &[u8], charset: Option<&str>) -> String {
+    if let Some(cs) = charset {
+        let label = normalize_charset_label(cs);
+        if let Some(enc) = Encoding::for_label(label.as_bytes()) {
+            let (cow, _, _) = enc.decode(bytes);
+            return cow.into_owned();
+        }
+    }
+    // Fallback: try utf-8 first
+    if let Ok(s) = std::str::from_utf8(bytes) {
+        return s.to_string();
+    }
+    // Fallback: gb18030
+    if let Some(enc) = Encoding::for_label(b"gb18030") {
+        let (cow, _, _) = enc.decode(bytes);
+        return cow.into_owned();
+    }
+    String::new()
+}
+
+fn score_decoded_html(s: &str) -> (usize, usize, bool) {
+    // (replacement_count, cjk_count, has_html_marker)
+    let replacement = s.chars().filter(|c| *c == '\u{FFFD}').count();
+    let cjk = s
+        .chars()
+        .filter(|c| matches!(*c, '\u{4E00}'..='\u{9FFF}'))
+        .count();
+    let lower = s.to_lowercase();
+    let has_html = lower.contains("<html") || lower.contains("<!doctype") || lower.contains("<head") || lower.contains("<meta");
+    (replacement, cjk, has_html)
+}
+
+fn choose_best_decoding(bytes: &[u8]) -> String {
+    let utf8 = decode_bytes_with_charset(bytes, Some("utf-8"));
+    let gb = decode_bytes_with_charset(bytes, Some("gb18030"));
+    let big5 = decode_bytes_with_charset(bytes, Some("big5"));
+
+    let (r1, c1, h1) = score_decoded_html(&utf8);
+    let (r2, c2, h2) = score_decoded_html(&gb);
+    let (r3, c3, h3) = score_decoded_html(&big5);
+
+    // Choose best among candidates.
+    // 1) Prefer a candidate that looks like HTML (has markers), if others don't.
+    // 2) Prefer fewer replacement characters.
+    // 3) Tie-breaker: more CJK characters.
+    let mut best = (utf8, r1, c1, h1);
+
+    for (s, r, c, h) in [(gb, r2, c2, h2), (big5, r3, c3, h3)] {
+        let (_, br, bc, bh) = &best;
+        if *bh && !h {
+            continue;
+        }
+        if !*bh && h {
+            best = (s, r, c, h);
+            continue;
+        }
+        if r + 2 < *br {
+            best = (s, r, c, h);
+            continue;
+        }
+        if *br + 2 < r {
+            continue;
+        }
+        if c > *bc {
+            best = (s, r, c, h);
+        }
+    }
+
+    best.0
+}
+
+fn should_fallback_to_heuristic(decoded: &str) -> bool {
+    let (rep, _cjk, _h) = score_decoded_html(decoded);
+    if decoded.is_empty() {
+        return true;
+    }
+    // If there are lots of U+FFFD replacement chars, it's very likely wrong charset.
+    // Use both absolute and relative thresholds.
+    let len = decoded.chars().count().max(1);
+    rep >= 40 || (rep as f64 / len as f64) > 0.008
+}
+
+#[tauri::command]
+fn fetch_url_decoded(req: FetchDecodedRequest) -> Result<String, String> {
+    let mut builder = reqwest::blocking::Client::builder();
+    if let Some(ms) = req.timeout_ms {
+        builder = builder.timeout(std::time::Duration::from_millis(ms));
+    }
+    if req.accept_invalid_certs.unwrap_or(false) {
+        builder = builder.danger_accept_invalid_certs(true);
+    }
+    if let Some(p) = req.proxy_url.as_ref() {
+        if !p.trim().is_empty() {
+            builder = builder
+                .proxy(reqwest::Proxy::all(p).map_err(|e| format!("invalid proxy: {e}"))?);
+        }
+    }
+
+    let client = builder.build().map_err(|e| format!("failed to build client: {e}"))?;
+    let mut request = client.get(&req.url);
+    if let Some(hdrs) = req.headers.as_ref() {
+        for (k, v) in hdrs {
+            if k.trim().is_empty() { continue; }
+            request = request.header(k, v);
+        }
+    }
+
+    let resp = request.send().map_err(|e| format!("failed to fetch: {e}"))?;
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(format!("HTTP Error: {}", status.as_u16()));
+    }
+    let content_type = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+
+    let bytes = resp.bytes().map_err(|e| format!("failed to read bytes: {e}"))?;
+    let header_charset = sniff_charset_from_content_type(&content_type);
+    if header_charset.is_some() {
+        let s = decode_bytes_with_charset(&bytes, header_charset.as_deref());
+        if should_fallback_to_heuristic(&s) {
+            return Ok(choose_best_decoding(&bytes));
+        }
+        return Ok(s);
+    }
+
+    // sniff from html head (latin1)
+    let head_len = std::cmp::min(4096, bytes.len());
+    let head = &bytes[..head_len];
+    let head_latin1: String = head.iter().map(|b| *b as char).collect();
+    let meta_charset = sniff_charset_from_html_meta(&head_latin1);
+    if meta_charset.is_some() {
+        let s = decode_bytes_with_charset(&bytes, meta_charset.as_deref());
+        if should_fallback_to_heuristic(&s) {
+            return Ok(choose_best_decoding(&bytes));
+        }
+        return Ok(s);
+    }
+
+    // fallback heuristics (webview TextDecoder may not support gbk, so do it here)
+    Ok(choose_best_decoding(&bytes))
 }
 
 #[tauri::command]
@@ -493,6 +696,7 @@ pub fn run() {
             get_disk_info,
             get_network_info,
             fetch_url,
+            fetch_url_decoded,
             parse_html_by_selector,
             scrape_page,
             launch_app,

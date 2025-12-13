@@ -18,6 +18,7 @@
               :bordered="false"
             >
               <a-input
+                ref="urlInputRef"
                 placeholder="输入目标网址 (例如 https://example.com)"
                 @pressEnter="fetchPage"
                 :bordered="false"
@@ -30,6 +31,21 @@
             
             <div class="url-actions">
                <a-divider type="vertical" style="height: 20px; margin: 0 4px" />
+               <a-tooltip title="粘贴网址">
+                  <a-button type="text" shape="circle" @click="pasteUrl">
+                    <CopyOutlined />
+                  </a-button>
+               </a-tooltip>
+               <a-tooltip title="清空输入">
+                  <a-button type="text" shape="circle" @click="clearTargetUrl" :disabled="!targetUrl">
+                    <ClearOutlined />
+                  </a-button>
+               </a-tooltip>
+               <a-tooltip title="在浏览器打开">
+                  <a-button type="text" shape="circle" @click="openInBrowser" :disabled="!targetUrl">
+                    <GlobalOutlined />
+                  </a-button>
+               </a-tooltip>
                <a-tooltip title="请求设置">
                   <a-button type="text" shape="circle" @click="settingsVisible = true">
                     <SettingOutlined />
@@ -42,7 +58,7 @@
                </a-tooltip>
             </div>
 
-            <a-button type="primary" class="fetch-btn" :loading="loading" @click="fetchPage">
+            <a-button type="primary" class="fetch-btn" :loading="loading" :disabled="!canFetch" @click="fetchPage">
               <template #icon><GlobalOutlined /></template>
               加载页面
             </a-button>
@@ -181,7 +197,15 @@
                                 <div class="selector-input-group">
                                    <a-input v-model:value="field.selector" placeholder="点击左侧元素自动获取" size="small">
                                       <template #suffix>
-                                         <AimOutlined class="aim-icon" :class="{ active: isInspectorActive }" />
+                                         <span class="selector-suffix" @click.stop>
+                                           <a-tooltip title="复制选择器">
+                                             <CopyOutlined class="suffix-icon" @click.stop="copyFieldSelector(index)" />
+                                           </a-tooltip>
+                                           <a-tooltip title="清空选择器">
+                                             <ClearOutlined class="suffix-icon" @click.stop="clearFieldSelector(index)" />
+                                           </a-tooltip>
+                                           <AimOutlined class="aim-icon" :class="{ active: isInspectorActive }" />
+                                         </span>
                                       </template>
                                    </a-input>
                                 </div>
@@ -203,6 +227,11 @@
                                 <label>自定义属性名</label>
                                 <a-input v-model:value="field.customAttr" placeholder="例如 data-id" size="small" />
                              </div>
+                          </div>
+
+                          <div v-if="processedHtml" class="field-sample">
+                            <span class="sample-label">示例</span>
+                            <span class="sample-value">{{ fieldSampleText(field.name) }}</span>
                           </div>
 
                           <div class="data-clean-section">
@@ -285,6 +314,10 @@
                         </template>
                         <a-button size="small">导出 <DownOutlined /></a-button>
                       </a-dropdown>
+
+                      <a-button size="small" @click="copyPreviewData" :disabled="!hasPreviewData">
+                        <CopyOutlined /> 复制
+                      </a-button>
                   </div>
                   
                   <div class="display-area custom-scroll">
@@ -323,6 +356,27 @@
       <a-form layout="vertical">
         <a-form-item label="请求超时 (毫秒)">
           <a-input-number v-model:value="requestTimeout" style="width: 100%" />
+        </a-form-item>
+
+        <a-form-item label="代理 (Proxy URL，可选)">
+          <a-input v-model:value="proxyUrl" placeholder="例如 http://127.0.0.1:7890" />
+        </a-form-item>
+
+        <a-form-item label="忽略证书错误">
+          <a-switch v-model:checked="acceptInvalidCerts" />
+        </a-form-item>
+
+        <a-form-item label="选取模式体验">
+          <div class="pick-settings">
+            <div class="pick-setting-row">
+              <div class="pick-setting-label">选中后自动退出选取</div>
+              <a-switch v-model:checked="autoExitOnPick" />
+            </div>
+            <div class="pick-setting-row">
+              <div class="pick-setting-label">选中后自动切到下一个字段</div>
+              <a-switch v-model:checked="autoAdvanceOnPick" />
+            </div>
+          </div>
         </a-form-item>
         
         <div class="section-divider">请求头 (Headers)</div>
@@ -403,6 +457,7 @@ const requestMethod = ref('GET');
 const loading = ref(false);
 const processedHtml = ref('');
 const previewFrame = ref(null);
+const urlInputRef = ref(null);
 const isInspectorActive = ref(false);
 const isMobileView = ref(false);
 const activeTab = ref('fields');
@@ -418,6 +473,12 @@ const requestHeaders = ref([
   { key: 'User-Agent', value: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' }
 ]);
 const requestTimeout = ref(10000);
+const proxyUrl = ref('');
+const acceptInvalidCerts = ref(false);
+
+const autoExitOnPick = ref(false);
+const autoAdvanceOnPick = ref(false);
+const PICK_SETTINGS_KEY = 'scraper:pickSettings:v1';
 
 // --- Data Preview Options ---
 const previewViewMode = ref('json'); // 'json' | 'table'
@@ -464,6 +525,30 @@ const normalizedUrl = (input) => {
   if (!str) return '';
   if (str.startsWith('http://') || str.startsWith('https://')) return str;
   return 'https://' + str;
+};
+
+const canFetch = computed(() => {
+  return !loading.value && !!(targetUrl.value || '').trim();
+});
+
+const pasteUrl = async () => {
+  try {
+    const text = await navigator.clipboard.readText();
+    if (!text) return;
+    targetUrl.value = text.trim();
+  } catch (e) {
+    message.error('粘贴失败（可能无权限）');
+  }
+};
+
+const clearTargetUrl = () => {
+  targetUrl.value = '';
+};
+
+const openInBrowser = () => {
+  const u = normalizedUrl(targetUrl.value);
+  if (!u) return;
+  window.open(u, '_blank');
 };
 
 const addToHistory = (url) => {
@@ -581,6 +666,32 @@ const downloadFile = (filename, content, type = 'text/plain') => {
 
 // --- Browser & Inspector Logic ---
 
+const formatFetchError = (err) => {
+  try {
+    if (!err) return '网络请求失败';
+    if (typeof err === 'string') return err;
+    if (err instanceof Error) {
+      const parts = [];
+      if (err.name) parts.push(err.name);
+      if (err.message) parts.push(err.message);
+      const causeMsg = typeof err.cause === 'string'
+        ? err.cause
+        : (err.cause && typeof err.cause === 'object' && 'message' in err.cause)
+          ? err.cause.message
+          : '';
+      if (causeMsg) parts.push(`cause: ${causeMsg}`);
+      return parts.join(' | ') || '网络请求失败';
+    }
+    if (typeof err === 'object') {
+      const msg = err.message || err.toString?.();
+      return msg || '网络请求失败';
+    }
+    return String(err);
+  } catch (_) {
+    return '网络请求失败';
+  }
+};
+
 const fetchPage = async () => {
   if (!targetUrl.value) {
     message.warning('请输入目标网址');
@@ -601,7 +712,11 @@ const fetchPage = async () => {
     const response = await fetch(targetUrl.value, {
       method: 'GET',
       headers: headers,
-      connectTimeout: requestTimeout.value
+      connectTimeout: requestTimeout.value,
+      ...(proxyUrl.value ? { proxy: { all: proxyUrl.value } } : {}),
+      ...(acceptInvalidCerts.value
+        ? { danger: { acceptInvalidCerts: true, acceptInvalidHostnames: true } }
+        : {})
     });
     
     if (!response.ok) {
@@ -614,8 +729,14 @@ const fetchPage = async () => {
     
     message.success('页面加载成功');
   } catch (error) {
-    console.error(error);
-    message.error(`加载失败: ${error?.message || error || '网络请求失败'}`);
+    console.error('Scraper fetchPage error:', {
+      error,
+      name: error?.name,
+      message: error?.message,
+      cause: error?.cause,
+      stack: error?.stack
+    });
+    message.error(`加载失败: ${formatFetchError(error)}（可能与代理/证书/DNS有关）`);
   } finally {
     loading.value = false;
   }
@@ -737,6 +858,15 @@ const handleMessage = (event) => {
       message.success(`已选择: ${event.data.tagName}`);
       // Refresh preview automatically
       scheduleRefreshPreview();
+
+      if (autoAdvanceOnPick.value) {
+        if (currentFieldIndex.value < fields.length - 1) {
+          currentFieldIndex.value += 1;
+        }
+      }
+      if (autoExitOnPick.value) {
+        isInspectorActive.value = false;
+      }
     }
   }
 };
@@ -758,6 +888,9 @@ const handleKeydown = (e) => {
     // Only fetch if focused on URL? Actually let's restrict this
     // e.preventDefault();
     // fetchPage();
+  } else if (key === 'l') {
+    e.preventDefault();
+    urlInputRef.value?.focus?.();
   } else if (key === 'i') {
     e.preventDefault();
     isInspectorActive.value = !isInspectorActive.value;
@@ -768,6 +901,28 @@ onMounted(() => {
   window.addEventListener('message', handleMessage);
   window.addEventListener('keydown', handleKeydown);
   loadUrlHistory();
+
+  try {
+    const raw = localStorage.getItem(PICK_SETTINGS_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (parsed && typeof parsed === 'object') {
+      if (typeof parsed.autoExitOnPick === 'boolean') autoExitOnPick.value = parsed.autoExitOnPick;
+      if (typeof parsed.autoAdvanceOnPick === 'boolean') autoAdvanceOnPick.value = parsed.autoAdvanceOnPick;
+    }
+  } catch (e) {
+    // ignore
+  }
+});
+
+watch([autoExitOnPick, autoAdvanceOnPick], () => {
+  try {
+    localStorage.setItem(PICK_SETTINGS_KEY, JSON.stringify({
+      autoExitOnPick: autoExitOnPick.value,
+      autoAdvanceOnPick: autoAdvanceOnPick.value
+    }));
+  } catch (e) {
+    // ignore
+  }
 });
 
 onUnmounted(() => {
@@ -803,6 +958,24 @@ const removeField = (index) => {
   if (currentFieldIndex.value >= fields.length) {
     currentFieldIndex.value = Math.max(0, fields.length - 1);
   }
+};
+
+const copyFieldSelector = async (index) => {
+  const text = (fields[index] && fields[index].selector) ? String(fields[index].selector) : '';
+  if (!text) {
+    message.info('暂无可复制的选择器');
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    message.success('选择器已复制');
+  } catch (e) {
+    message.error('复制失败');
+  }
+};
+
+const clearFieldSelector = (index) => {
+  if (fields[index]) fields[index].selector = '';
 };
 
 // --- Preview Logic ---
@@ -906,6 +1079,26 @@ const extractValue = (el, field) => {
 const previewDataJson = computed(() => {
   return JSON.stringify(previewResult.value, null, 2);
 });
+
+const fieldSampleText = (fieldName) => {
+  if (!fieldName) return '—';
+  if (!hasPreviewData.value) return '—';
+  const row = listMode.value ? (Array.isArray(previewResult.value) ? previewResult.value[0] : null) : previewResult.value;
+  const val = row ? row[fieldName] : null;
+  if (val === null || val === undefined || val === '') return '—';
+  const str = String(val);
+  return str.length > 80 ? str.slice(0, 80) + '…' : str;
+};
+
+const copyPreviewData = async () => {
+  if (!hasPreviewData.value) return;
+  try {
+    await navigator.clipboard.writeText(previewDataJson.value);
+    message.success('已复制预览数据');
+  } catch (e) {
+    message.error('复制失败');
+  }
+};
 
 const detectListSelector = () => {
   if (!processedHtml.value) {
@@ -1665,6 +1858,47 @@ const downloadCode = () => {
    color: var(--primary-color);
 }
 
+.selector-suffix {
+   display: inline-flex;
+   align-items: center;
+   gap: 6px;
+}
+
+.suffix-icon {
+   cursor: pointer;
+   color: #94a3b8;
+   transition: color 0.2s;
+}
+
+.suffix-icon:hover {
+   color: var(--primary-color);
+}
+
+.field-sample {
+   display: flex;
+   gap: 8px;
+   align-items: center;
+   padding: 6px 8px;
+   border-radius: 6px;
+   background: #f8fafc;
+   border: 1px solid #e2e8f0;
+}
+
+.sample-label {
+   font-size: 11px;
+   color: #64748b;
+   flex: 0 0 auto;
+}
+
+.sample-value {
+   font-size: 12px;
+   color: #0f172a;
+   flex: 1;
+   white-space: nowrap;
+   overflow: hidden;
+   text-overflow: ellipsis;
+}
+
 .data-clean-section {
    background: #f8fafc;
    padding: 8px;
@@ -1801,6 +2035,28 @@ const downloadCode = () => {
     display: flex;
     flex-direction: column;
     gap: 8px;
+}
+
+.pick-settings {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid #f1f5f9;
+    border-radius: 8px;
+    background: #fafafa;
+}
+
+.pick-setting-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.pick-setting-label {
+    font-size: 12px;
+    color: #475569;
 }
 
 .header-row {

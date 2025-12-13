@@ -165,9 +165,10 @@ onMounted(async () => {
   }
 
   // 恢复上次访问的路由
+  await router.isReady();
   const lastRouteName = localStorage.getItem(LAST_ROUTE_KEY);
   if (lastRouteName && lastRouteName !== route.name) {
-    router.push({ name: lastRouteName }).catch((err) => {
+    router.replace({ name: lastRouteName }).catch((err) => {
       console.warn("恢复上次路由失败:", err);
     });
   }

@@ -139,7 +139,7 @@
         </div>
         
         <div class="browser-viewport-wrapper">
-            <div class="browser-viewport" ref="browserContainer" :class="{ 'mobile-view': isMobileView }">
+            <div class="browser-viewport" ref="browserContainer" :class="{ 'mobile-view': isMobileView, 'inspector-active': isInspectorActive }">
               <div class="browser-address-bar" v-if="processedHtml">
                  <div class="traffic-lights">
                     <span></span><span></span><span></span>
@@ -186,7 +186,14 @@
             <div class="config-content scrollbar-custom">
               <div class="fields-list">
                  <transition-group name="list" tag="div">
-                    <div v-for="(field, index) in fields" :key="index" class="field-card" :class="{ active: currentFieldIndex === index }" @click="currentFieldIndex = index">
+                    <div 
+                      v-for="(field, index) in fields" 
+                      :key="index" 
+                      class="field-card" 
+                      :class="{ active: currentFieldIndex === index, 'flash-success': updatedFields.has(index) }" 
+                      :data-index="index"
+                      @click="currentFieldIndex = index"
+                    >
                        <div class="field-card-header">
                           <div class="field-name">
                              <span class="field-index">#{{ index + 1 }}</span>
@@ -198,6 +205,13 @@
                              >{{ fieldDiagnosticText(index) }}</a-tag>
                           </div>
                           <div class="field-actions">
+                             <a-tooltip title="上移">
+                                <a-button type="text" size="small" :disabled="index === 0" @click.stop="moveField(index, -1)"><ArrowUpOutlined /></a-button>
+                             </a-tooltip>
+                             <a-tooltip title="下移">
+                                <a-button type="text" size="small" :disabled="index === fields.length - 1" @click.stop="moveField(index, 1)"><ArrowDownOutlined /></a-button>
+                             </a-tooltip>
+                             <div class="divider-vertical-small"></div>
                              <a-tooltip title="复制">
                                 <a-button type="text" size="small" @click.stop="duplicateField(index)"><CopyOutlined /></a-button>
                              </a-tooltip>
@@ -275,6 +289,11 @@
                        </div>
                     </div>
                  </transition-group>
+
+                 <div v-if="fields.length === 0" class="empty-fields-state">
+                    <div class="empty-icon"><ProfileOutlined /></div>
+                    <div class="empty-text">暂无提取字段</div>
+                 </div>
 
                  <a-button type="dashed" block class="add-field-btn" @click="addField">
                    <PlusOutlined /> 添加新字段
@@ -734,7 +753,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue';
+import { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import { message } from 'ant-design-vue';
 import { 
   GlobalOutlined, 
@@ -760,6 +779,8 @@ import {
   DownOutlined,
   PlayCircleOutlined,
   StopOutlined,
+  ArrowUpOutlined,
+  ArrowDownOutlined,
   QuestionCircleOutlined
 } from '@ant-design/icons-vue';
 import { invoke } from '@tauri-apps/api/core';
@@ -815,6 +836,27 @@ const currentFieldIndex = ref(0);
 const listMode = ref(false);
 const listSelector = ref('');
 
+const updatedFields = ref(new Set());
+
+const triggerFieldFlash = (index) => {
+  updatedFields.value.add(index);
+  setTimeout(() => {
+    updatedFields.value.delete(index);
+  }, 1000);
+};
+
+const scrollToField = async (index) => {
+  await nextTick();
+  const el = document.querySelector(`.field-card[data-index="${index}"]`);
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+};
+
+watch(currentFieldIndex, (newVal) => {
+  scrollToField(newVal);
+});
+
 const codeModalVisible = ref(false);
 const codeLanguage = ref('node');
 
@@ -834,7 +876,7 @@ const crawlResults = ref([]);
 const crawlRunning = ref(false);
 const crawlProcessed = ref(0);
 const crawlMaxPages = ref(200);
-const crawlConcurrency = ref(2);
+const crawlConcurrency = ref(5);
 const crawlDelayMs = ref(300);
 const crawlRetry = ref(1);
 const discoverLinksSelector = ref('');
@@ -1840,7 +1882,7 @@ const injectInspectorScript = (html, baseUrl) => {
             const parts = full.split(' > ').map(x => x.trim()).filter(Boolean);
             for (let i = 0; i < parts.length; i++) {
               const candidate = parts.slice(i).join(' > ');
-              if (isUnique(candidate)) return candidate;
+              if (candidate && isUnique(candidate)) return candidate;
             }
           } catch (e) {}
 
@@ -1885,6 +1927,7 @@ const handleMessage = (event) => {
       if (isDefaultFieldName(fields[currentFieldIndex.value].name)) {
         fields[currentFieldIndex.value].name = suggestFieldNameFromPick(event.data, currentFieldIndex.value);
       }
+      triggerFieldFlash(currentFieldIndex.value);
       message.success(`已选择: ${event.data.tagName}`);
       // Refresh preview automatically
       scheduleRefreshPreview();
@@ -1994,16 +2037,32 @@ const addField = () => {
   currentFieldIndex.value = fields.length - 1;
 };
 
-const duplicateField = (index) => {
-  const field = fields[index];
-  fields.splice(index + 1, 0, JSON.parse(JSON.stringify(field)));
-};
-
 const removeField = (index) => {
   fields.splice(index, 1);
   if (currentFieldIndex.value >= fields.length) {
     currentFieldIndex.value = Math.max(0, fields.length - 1);
+  } else if (index < currentFieldIndex.value) {
+    currentFieldIndex.value--;
   }
+};
+
+const moveField = (index, direction) => {
+  const newIndex = index + direction;
+  if (newIndex < 0 || newIndex >= fields.length) return;
+  const temp = fields[index];
+  fields[index] = fields[newIndex];
+  fields[newIndex] = temp;
+  if (currentFieldIndex.value === index) {
+    currentFieldIndex.value = newIndex;
+  } else if (currentFieldIndex.value === newIndex) {
+    currentFieldIndex.value = index;
+  }
+};
+
+const duplicateField = (index) => {
+  if (index < 0 || index >= fields.length) return;
+  const field = fields[index];
+  fields.splice(index + 1, 0, JSON.parse(JSON.stringify(field)));
 };
 
 const copyFieldSelector = async (index) => {
@@ -2871,6 +2930,11 @@ const downloadCode = () => {
    border: 8px solid #2d3748;
 }
 
+.browser-viewport.inspector-active {
+   border-color: var(--primary-color);
+   box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.2);
+}
+
 .browser-address-bar {
    height: 36px;
    background: #f1f5f9;
@@ -3082,6 +3146,15 @@ const downloadCode = () => {
    background: #eff6ff;
 }
 
+.field-card.flash-success {
+   animation: flash-success-anim 1s ease-out;
+}
+
+@keyframes flash-success-anim {
+   0% { box-shadow: 0 0 0 2px #52c41a; border-color: #52c41a; }
+   100% { box-shadow: 0 0 0 2px rgba(82, 196, 26, 0); border-color: #e2e8f0; }
+}
+
 .field-name {
    display: flex;
    align-items: center;
@@ -3100,6 +3173,13 @@ const downloadCode = () => {
    color: #94a3b8;
    font-weight: 600;
    width: 24px;
+}
+
+.divider-vertical-small {
+   width: 1px;
+   height: 14px;
+   background: #e2e8f0;
+   margin: 0 4px;
 }
 
 .field-name-input {
@@ -3196,9 +3276,12 @@ const downloadCode = () => {
 
 .data-clean-section {
    background: #f8fafc;
-   padding: 8px;
+   padding: 10px;
    border-radius: 6px;
    border: 1px dashed #e2e8f0;
+   display: flex;
+   flex-direction: column;
+   gap: 6px;
 }
 
 .section-title {
@@ -3553,6 +3636,29 @@ const downloadCode = () => {
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.empty-fields-state {
+   padding: 24px;
+   display: flex;
+   flex-direction: column;
+   align-items: center;
+   justify-content: center;
+   color: #94a3b8;
+   border: 1px dashed #e2e8f0;
+   border-radius: 8px;
+   background: #f8fafc;
+   margin-bottom: 12px;
+}
+
+.empty-fields-state .empty-icon {
+   font-size: 24px;
+   margin-bottom: 8px;
+   color: #cbd5e1;
+}
+
+.empty-fields-state .empty-text {
+   font-size: 13px;
 }
 
 /* List Transition */

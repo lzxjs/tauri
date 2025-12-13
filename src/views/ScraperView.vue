@@ -79,12 +79,24 @@
                <template #icon><CodeOutlined /></template>
                生成代码
             </a-button>
+
+            <a-tooltip title="使用说明">
+              <a-button class="action-btn" shape="circle" @click="helpModalVisible = true">
+                <QuestionCircleOutlined />
+              </a-button>
+            </a-tooltip>
             
             <a-dropdown>
               <template #overlay>
                 <a-menu>
                   <a-menu-item key="save" @click="exportRules">
                     <SaveOutlined /> 保存规则配置
+                  </a-menu-item>
+                  <a-menu-item key="saveTpl" @click="openSaveTemplate">
+                    <SaveOutlined /> 保存为本地模板
+                  </a-menu-item>
+                  <a-menu-item key="loadTpl" @click="openLoadTemplate">
+                    <FolderOpenOutlined /> 加载本地模板
                   </a-menu-item>
                   <a-menu-item key="load" @click="triggerImport">
                     <FolderOpenOutlined /> 导入规则配置
@@ -204,7 +216,9 @@
                                            <a-tooltip title="清空选择器">
                                              <ClearOutlined class="suffix-icon" @click.stop="clearFieldSelector(index)" />
                                            </a-tooltip>
-                                           <AimOutlined class="aim-icon" :class="{ active: isInspectorActive }" />
+                                           <a-tooltip title="在预览中高亮">
+                                             <AimOutlined class="aim-icon" :class="{ active: isInspectorActive }" @click.stop="highlightFieldSelector(index)" />
+                                           </a-tooltip>
                                          </span>
                                       </template>
                                    </a-input>
@@ -340,6 +354,220 @@
                </div>
             </div>
           </a-tab-pane>
+
+          <a-tab-pane key="task">
+            <template #tab>
+              <span class="tab-label">
+                <PlayCircleOutlined />
+                任务执行
+              </span>
+            </template>
+
+            <div class="config-content task-tab-content">
+              <div class="task-section">
+                <div class="task-section-title">起始 URL</div>
+                <a-textarea
+                  v-model:value="startUrlsText"
+                  placeholder="每行一个 URL；留空则使用当前 URL"
+                  :auto-size="{ minRows: 4, maxRows: 8 }"
+                />
+                <div class="task-actions-row">
+                  <a-button size="small" @click="useCurrentUrlAsStart" :disabled="!targetUrl">
+                    使用当前 URL
+                  </a-button>
+                  <a-button size="small" @click="importStartUrlsToQueue">
+                    导入到队列
+                  </a-button>
+                  <a-button size="small" danger @click="clearCrawlQueue" :disabled="crawlQueue.length === 0">
+                    清空队列
+                  </a-button>
+                </div>
+              </div>
+
+              <div class="task-section">
+                <div class="task-section-title">执行参数</div>
+                <div class="task-grid">
+                  <div class="task-grid-item">
+                    <div class="task-label">最大抓取页数</div>
+                    <a-input-number v-model:value="crawlMaxPages" :min="1" :max="10000" style="width: 100%" />
+                  </div>
+                  <div class="task-grid-item">
+                    <div class="task-label">并发</div>
+                    <a-input-number v-model:value="crawlConcurrency" :min="1" :max="8" style="width: 100%" />
+                  </div>
+                  <div class="task-grid-item">
+                    <div class="task-label">请求间隔(ms)</div>
+                    <a-input-number v-model:value="crawlDelayMs" :min="0" :max="60000" style="width: 100%" />
+                  </div>
+                  <div class="task-grid-item">
+                    <div class="task-label">失败重试</div>
+                    <a-input-number v-model:value="crawlRetry" :min="0" :max="10" style="width: 100%" />
+                  </div>
+                </div>
+              </div>
+
+              <div class="task-section">
+                <div class="task-section-title">链接发现 / 分页</div>
+                <div class="task-subgrid">
+                  <div class="task-subgrid-item">
+                    <div class="task-label">发现链接选择器</div>
+                    <a-input v-model:value="discoverLinksSelector" placeholder="例如 a.detail-link" />
+                  </div>
+                  <div class="task-subgrid-item">
+                    <div class="task-label">链接属性</div>
+                    <a-select v-model:value="discoverLinksAttr" style="width: 100%">
+                      <a-select-option value="href">href</a-select-option>
+                      <a-select-option value="src">src</a-select-option>
+                      <a-select-option value="custom">custom</a-select-option>
+                    </a-select>
+                  </div>
+                  <div class="task-subgrid-item" v-if="discoverLinksAttr === 'custom'">
+                    <div class="task-label">自定义属性名</div>
+                    <a-input v-model:value="discoverLinksCustomAttr" placeholder="例如 data-url" />
+                  </div>
+                </div>
+
+                <div class="task-subgrid" style="margin-top: 12px">
+                  <div class="task-subgrid-item">
+                    <div class="task-label">下一页选择器</div>
+                    <a-input v-model:value="nextPageSelector" placeholder="例如 a.next" />
+                  </div>
+                  <div class="task-subgrid-item">
+                    <div class="task-label">下一页属性</div>
+                    <a-select v-model:value="nextPageAttr" style="width: 100%">
+                      <a-select-option value="href">href</a-select-option>
+                      <a-select-option value="custom">custom</a-select-option>
+                    </a-select>
+                  </div>
+                  <div class="task-subgrid-item" v-if="nextPageAttr === 'custom'">
+                    <div class="task-label">自定义属性名</div>
+                    <a-input v-model:value="nextPageCustomAttr" placeholder="例如 data-next" />
+                  </div>
+                </div>
+              </div>
+
+              <div class="task-section">
+                <div class="task-section-title">运行</div>
+                <div class="task-actions-row">
+                  <a-button type="primary" @click="startCrawl" :loading="crawlRunning" :disabled="crawlRunning">
+                    <template #icon><PlayCircleOutlined /></template>
+                    开始
+                  </a-button>
+                  <a-button @click="togglePauseCrawl" :disabled="!crawlRunning">
+                    {{ crawlPaused ? '继续' : '暂停' }}
+                  </a-button>
+                  <a-button danger @click="stopCrawl" :disabled="!crawlRunning">
+                    <template #icon><StopOutlined /></template>
+                    停止
+                  </a-button>
+                  <a-button @click="clearCrawlResults" :disabled="crawlResults.length === 0">
+                    清空结果
+                  </a-button>
+                  <a-popover placement="bottom" trigger="click">
+                    <template #content>
+                      <div class="task-popover">
+                        <div class="task-popover-row">
+                          <div class="task-label">结果去重</div>
+                          <a-switch v-model:checked="crawlDedupEnabled" />
+                        </div>
+                        <div class="task-popover-row" v-if="crawlDedupEnabled">
+                          <div class="task-label">去重字段</div>
+                          <a-select v-model:value="crawlDedupKey" style="width: 220px" :options="crawlDedupKeyOptions" />
+                        </div>
+                        <div class="task-popover-row">
+                          <div class="task-label">启动前清空结果</div>
+                          <a-switch v-model:checked="crawlClearOnStart" />
+                        </div>
+                      </div>
+                    </template>
+                    <a-button>更多设置</a-button>
+                  </a-popover>
+                  <a-dropdown>
+                    <template #overlay>
+                      <a-menu>
+                        <a-menu-item @click="exportCrawlData('json')"><FileTextOutlined /> 导出 JSON</a-menu-item>
+                        <a-menu-item @click="exportCrawlData('csv')"><TableOutlined /> 导出 CSV</a-menu-item>
+                      </a-menu>
+                    </template>
+                    <a-button :disabled="crawlResults.length === 0">导出 <DownOutlined /></a-button>
+                  </a-dropdown>
+                </div>
+                <div class="task-stats-row">
+                  <a-tag color="blue">队列: {{ crawlQueue.length }}</a-tag>
+                  <a-tag color="geekblue">已抓取: {{ crawlProcessed }}</a-tag>
+                  <a-tag color="green">结果: {{ crawlResults.length }}</a-tag>
+                  <a-tag v-if="crawlFailures.length" color="red">失败: {{ crawlFailures.length }}</a-tag>
+                </div>
+              </div>
+
+              <div class="task-section">
+                <div class="task-section-title">任务面板</div>
+                <a-collapse :bordered="false">
+                  <a-collapse-panel key="q" header="队列 / 正在抓取">
+                    <div class="task-panel-grid">
+                      <div class="task-panel-col">
+                        <div class="task-panel-title">正在抓取</div>
+                        <a-list size="small" bordered :data-source="crawlActiveUrls" :locale="{ emptyText: '无' }">
+                          <template #renderItem="{ item }">
+                            <a-list-item>{{ item }}</a-list-item>
+                          </template>
+                        </a-list>
+                      </div>
+                      <div class="task-panel-col">
+                        <div class="task-panel-title">待抓取队列</div>
+                        <a-list size="small" bordered :data-source="crawlQueuePreview" :locale="{ emptyText: '无' }">
+                          <template #renderItem="{ item }">
+                            <a-list-item>{{ item }}</a-list-item>
+                          </template>
+                        </a-list>
+                      </div>
+                    </div>
+                  </a-collapse-panel>
+                  <a-collapse-panel key="f" header="失败记录">
+                    <div class="task-actions-row" style="margin-top: 0">
+                      <a-button size="small" @click="clearCrawlFailures" :disabled="crawlFailures.length === 0">清空失败</a-button>
+                      <a-button size="small" @click="exportCrawlFailures" :disabled="crawlFailures.length === 0">导出失败 JSON</a-button>
+                    </div>
+                    <a-table
+                      v-if="crawlFailures.length"
+                      :dataSource="crawlFailures"
+                      :columns="crawlFailureColumns"
+                      size="small"
+                      :pagination="{ pageSize: 10, size: 'small' }"
+                      :scroll="{ x: 'max-content', y: 260 }"
+                      rowKey="id"
+                    />
+                    <div v-else class="task-empty">暂无失败</div>
+                  </a-collapse-panel>
+                  <a-collapse-panel key="l" header="运行日志">
+                    <div class="task-actions-row" style="margin-top: 0">
+                      <a-button size="small" @click="clearCrawlLogs" :disabled="crawlLogs.length === 0">清空日志</a-button>
+                    </div>
+                    <div class="task-log-box">
+                      <div v-if="crawlLogs.length === 0" class="task-empty" style="margin: 0">暂无日志</div>
+                      <div v-else>
+                        <div v-for="(line, idx) in crawlLogs" :key="idx" class="task-log-line">{{ line }}</div>
+                      </div>
+                    </div>
+                  </a-collapse-panel>
+                </a-collapse>
+              </div>
+
+              <div class="task-section" style="padding-bottom: 8px">
+                <div class="task-section-title">结果预览</div>
+                <a-table
+                  v-if="crawlResults.length"
+                  :dataSource="crawlResults"
+                  :columns="crawlTableColumns"
+                  size="small"
+                  :pagination="{ pageSize: 20, size: 'small' }"
+                  :scroll="{ x: 'max-content', y: 420 }"
+                  rowKey="__rowKey"
+                />
+                <div v-else class="task-empty">暂无结果</div>
+              </div>
+            </div>
+          </a-tab-pane>
         </a-tabs>
       </div>
     </div>
@@ -420,6 +648,83 @@
         </div>
       </div>
     </a-modal>
+
+    <a-modal
+      v-model:open="templateModalVisible"
+      :title="templateModalMode === 'save' ? '保存为本地模板' : '加载本地模板'"
+      width="520px"
+      :okText="templateModalMode === 'save' ? '保存' : '加载'"
+      @ok="templateModalMode === 'save' ? confirmSaveTemplate() : confirmLoadTemplate()"
+    >
+      <div v-if="templateModalMode === 'save'" class="template-modal-body">
+        <a-form layout="vertical">
+          <a-form-item label="模板名称">
+            <a-input v-model:value="templateNameInput" placeholder="例如 电商列表-详情" />
+          </a-form-item>
+        </a-form>
+      </div>
+      <div v-else class="template-modal-body">
+        <a-form layout="vertical">
+          <a-form-item label="选择模板">
+            <a-select v-model:value="selectedTemplateId" :options="templateOptions" placeholder="请选择" />
+          </a-form-item>
+          <div class="template-load-actions">
+            <a-button danger @click="deleteSelectedTemplate" :disabled="!selectedTemplateId">删除该模板</a-button>
+          </div>
+        </a-form>
+      </div>
+    </a-modal>
+
+    <a-modal
+      v-model:open="helpModalVisible"
+      title="使用说明"
+      width="860px"
+      :footer="null"
+    >
+      <div class="help-modal-body">
+        <h3>快速流程</h3>
+        <ol>
+          <li>输入 URL，点击「加载页面」</li>
+          <li>切换到「选取模式」，在预览页点击元素生成选择器</li>
+          <li>在「字段配置」里配置字段名、属性类型与清洗规则</li>
+          <li>在「数据预览」里验证单条/列表提取结果</li>
+          <li>在「任务执行」里批量抓取并导出 JSON/CSV 或「生成代码」导出脚本</li>
+        </ol>
+
+        <h3>顶部按钮</h3>
+        <ul>
+          <li><b>加载页面</b>：请求网页并在左侧 iframe 展示，同时更新预览解析源 HTML。</li>
+          <li><b>请求设置</b>：配置 Headers、超时、代理、证书策略，影响加载与任务执行。</li>
+          <li><b>生成代码</b>：生成 Node.js(Cheerio)/Python(BS4) 脚本。</li>
+          <li><b>规则管理</b>：导入/导出规则配置；保存/加载本地模板。</li>
+        </ul>
+
+        <h3>字段配置</h3>
+        <ul>
+          <li><b>selector</b>：CSS 选择器，来自选取模式或手动填写。</li>
+          <li><b>属性</b>：text/html/href/src/custom。</li>
+          <li><b>清洗</b>：trim/regex/replace。</li>
+          <li><b>准星按钮</b>：在预览页高亮该选择器，快速确认是否选对。</li>
+        </ul>
+
+        <h3>数据预览</h3>
+        <ul>
+          <li><b>单条模式</b>：整页提取 1 条数据对象。</li>
+          <li><b>列表模式</b>：通过 listSelector 找到列表项，对每个 item 提取字段。</li>
+        </ul>
+
+        <h3>任务执行</h3>
+        <ul>
+          <li><b>起始 URL</b>：每行一个 URL，可导入队列。</li>
+          <li><b>并发/间隔/重试</b>：控制抓取速度与稳定性。</li>
+          <li><b>链接发现</b>：从页面中按选择器提取链接并加入队列。</li>
+          <li><b>下一页</b>：按选择器提取下一页链接并加入队列。</li>
+          <li><b>暂停/继续</b>：临时暂停请求，继续后恢复。</li>
+          <li><b>更多设置</b>：结果去重、启动前清空结果/日志/失败等。</li>
+          <li><b>任务面板</b>：查看正在抓取、待抓取队列、失败记录与运行日志。</li>
+        </ul>
+      </div>
+    </a-modal>
   </div>
 </template>
 
@@ -447,7 +752,10 @@ import {
   ClearOutlined,
   LinkOutlined,
   ReloadOutlined,
-  DownOutlined
+  DownOutlined,
+  PlayCircleOutlined,
+  StopOutlined,
+  QuestionCircleOutlined
 } from '@ant-design/icons-vue';
 import { fetch } from '@tauri-apps/plugin-http';
 
@@ -455,6 +763,7 @@ import { fetch } from '@tauri-apps/plugin-http';
 const targetUrl = ref('');
 const requestMethod = ref('GET');
 const loading = ref(false);
+const rawHtml = ref('');
 const processedHtml = ref('');
 const previewFrame = ref(null);
 const urlInputRef = ref(null);
@@ -502,6 +811,41 @@ const listSelector = ref('');
 const codeModalVisible = ref(false);
 const codeLanguage = ref('node');
 
+const helpModalVisible = ref(false);
+
+const templateModalVisible = ref(false);
+const templateModalMode = ref('save');
+const templateNameInput = ref('');
+const selectedTemplateId = ref('');
+const templates = ref([]);
+const TEMPLATES_KEY = 'scraper:templates:v1';
+const LAST_CONFIG_KEY = 'scraper:lastConfig:v2';
+
+const startUrlsText = ref('');
+const crawlQueue = ref([]);
+const crawlResults = ref([]);
+const crawlRunning = ref(false);
+const crawlProcessed = ref(0);
+const crawlMaxPages = ref(200);
+const crawlConcurrency = ref(2);
+const crawlDelayMs = ref(300);
+const crawlRetry = ref(1);
+const discoverLinksSelector = ref('');
+const discoverLinksAttr = ref('href');
+const discoverLinksCustomAttr = ref('');
+const nextPageSelector = ref('');
+const nextPageAttr = ref('href');
+const nextPageCustomAttr = ref('');
+const crawlRunId = ref(0);
+
+const crawlPaused = ref(false);
+const crawlActiveUrls = ref([]);
+const crawlFailures = ref([]);
+const crawlLogs = ref([]);
+const crawlDedupEnabled = ref(true);
+const crawlDedupKey = ref('__url');
+const crawlClearOnStart = ref(false);
+
 const loadUrlHistory = () => {
   try {
     const raw = localStorage.getItem(URL_HISTORY_KEY);
@@ -527,8 +871,61 @@ const normalizedUrl = (input) => {
   return 'https://' + str;
 };
 
+const safeResolveUrl = (baseUrl, maybeUrl) => {
+  const raw = (maybeUrl || '').trim();
+  if (!raw) return raw;
+  try {
+    return new URL(raw, baseUrl).toString();
+  } catch (_) {
+    return raw;
+  }
+};
+
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, Math.max(0, ms || 0)));
+
+const pushCrawlLog = (text) => {
+  const line = `[${new Date().toLocaleTimeString()}] ${text}`;
+  crawlLogs.value.push(line);
+  if (crawlLogs.value.length > 500) crawlLogs.value.splice(0, crawlLogs.value.length - 500);
+};
+
+const clearCrawlLogs = () => {
+  crawlLogs.value = [];
+};
+
+const clearCrawlFailures = () => {
+  crawlFailures.value = [];
+};
+
+const exportCrawlFailures = () => {
+  if (!crawlFailures.value.length) return;
+  downloadFile('crawl-failures.json', JSON.stringify(crawlFailures.value, null, 2));
+};
+
 const canFetch = computed(() => {
   return !loading.value && !!(targetUrl.value || '').trim();
+});
+
+const crawlFailureColumns = computed(() => {
+  return [
+    { title: '时间', dataIndex: 'time', key: 'time', width: 110 },
+    { title: 'URL', dataIndex: 'url', key: 'url' },
+    { title: '错误', dataIndex: 'error', key: 'error' }
+  ];
+});
+
+const crawlQueuePreview = computed(() => {
+  return (crawlQueue.value || []).slice(0, 30);
+});
+
+const crawlDedupKeyOptions = computed(() => {
+  const opts = [
+    { label: '__url', value: '__url' }
+  ];
+  fields.filter(f => f && f.name).forEach(f => {
+    opts.push({ label: f.name, value: f.name });
+  });
+  return opts;
 });
 
 const pasteUrl = async () => {
@@ -583,6 +980,185 @@ const removeHeader = (index) => {
   requestHeaders.value.splice(index, 1);
 };
 
+const cloneFields = () => {
+  try {
+    return JSON.parse(JSON.stringify(fields));
+  } catch (_) {
+    return fields.map(f => ({ ...f }));
+  }
+};
+
+const normalizeFields = (arr) => {
+  const list = Array.isArray(arr) ? arr : [];
+  return list.map((f, idx) => ({
+    name: typeof f?.name === 'string' ? f.name : `field_${idx + 1}`,
+    selector: typeof f?.selector === 'string' ? f.selector : '',
+    attr: typeof f?.attr === 'string' ? f.attr : 'text',
+    customAttr: typeof f?.customAttr === 'string' ? f.customAttr : '',
+    transformType: typeof f?.transformType === 'string' ? f.transformType : 'none',
+    transformPattern: typeof f?.transformPattern === 'string' ? f.transformPattern : '',
+    transformReplacement: typeof f?.transformReplacement === 'string' ? f.transformReplacement : ''
+  }));
+};
+
+const cloneHeaders = () => {
+  const list = Array.isArray(requestHeaders.value) ? requestHeaders.value : [];
+  return list.map(h => ({
+    key: typeof h?.key === 'string' ? h.key : '',
+    value: typeof h?.value === 'string' ? h.value : ''
+  }));
+};
+
+const getCurrentConfigSnapshot = () => {
+  return {
+    targetUrl: targetUrl.value,
+    requestMethod: requestMethod.value,
+    fields: cloneFields(),
+    listMode: listMode.value,
+    listSelector: listSelector.value,
+    headers: cloneHeaders(),
+    requestTimeout: requestTimeout.value,
+    proxyUrl: proxyUrl.value,
+    acceptInvalidCerts: acceptInvalidCerts.value,
+    autoExitOnPick: autoExitOnPick.value,
+    autoAdvanceOnPick: autoAdvanceOnPick.value,
+
+    startUrlsText: startUrlsText.value,
+    crawlMaxPages: crawlMaxPages.value,
+    crawlConcurrency: crawlConcurrency.value,
+    crawlDelayMs: crawlDelayMs.value,
+    crawlRetry: crawlRetry.value,
+    discoverLinksSelector: discoverLinksSelector.value,
+    discoverLinksAttr: discoverLinksAttr.value,
+    discoverLinksCustomAttr: discoverLinksCustomAttr.value,
+    nextPageSelector: nextPageSelector.value,
+    nextPageAttr: nextPageAttr.value,
+    nextPageCustomAttr: nextPageCustomAttr.value,
+
+    crawlDedupEnabled: crawlDedupEnabled.value,
+    crawlDedupKey: crawlDedupKey.value,
+    crawlClearOnStart: crawlClearOnStart.value
+  };
+};
+
+const applyConfigSnapshot = (config) => {
+  if (!config || typeof config !== 'object') return;
+  if (typeof config.targetUrl === 'string') targetUrl.value = config.targetUrl;
+  if (typeof config.requestMethod === 'string') requestMethod.value = config.requestMethod;
+  if (Array.isArray(config.fields)) {
+    fields.length = 0;
+    fields.push(...normalizeFields(config.fields));
+  }
+  if (typeof config.listMode === 'boolean') listMode.value = config.listMode;
+  if (typeof config.listSelector === 'string') listSelector.value = config.listSelector;
+  if (Array.isArray(config.headers)) requestHeaders.value = config.headers;
+  if (typeof config.requestTimeout === 'number') requestTimeout.value = config.requestTimeout;
+  if (typeof config.proxyUrl === 'string') proxyUrl.value = config.proxyUrl;
+  if (typeof config.acceptInvalidCerts === 'boolean') acceptInvalidCerts.value = config.acceptInvalidCerts;
+  if (typeof config.autoExitOnPick === 'boolean') autoExitOnPick.value = config.autoExitOnPick;
+  if (typeof config.autoAdvanceOnPick === 'boolean') autoAdvanceOnPick.value = config.autoAdvanceOnPick;
+
+  if (typeof config.startUrlsText === 'string') startUrlsText.value = config.startUrlsText;
+  if (typeof config.crawlMaxPages === 'number') crawlMaxPages.value = config.crawlMaxPages;
+  if (typeof config.crawlConcurrency === 'number') crawlConcurrency.value = config.crawlConcurrency;
+  if (typeof config.crawlDelayMs === 'number') crawlDelayMs.value = config.crawlDelayMs;
+  if (typeof config.crawlRetry === 'number') crawlRetry.value = config.crawlRetry;
+  if (typeof config.discoverLinksSelector === 'string') discoverLinksSelector.value = config.discoverLinksSelector;
+  if (typeof config.discoverLinksAttr === 'string') discoverLinksAttr.value = config.discoverLinksAttr;
+  if (typeof config.discoverLinksCustomAttr === 'string') discoverLinksCustomAttr.value = config.discoverLinksCustomAttr;
+  if (typeof config.nextPageSelector === 'string') nextPageSelector.value = config.nextPageSelector;
+  if (typeof config.nextPageAttr === 'string') nextPageAttr.value = config.nextPageAttr;
+  if (typeof config.nextPageCustomAttr === 'string') nextPageCustomAttr.value = config.nextPageCustomAttr;
+
+  if (typeof config.crawlDedupEnabled === 'boolean') crawlDedupEnabled.value = config.crawlDedupEnabled;
+  if (typeof config.crawlDedupKey === 'string') crawlDedupKey.value = config.crawlDedupKey;
+  if (typeof config.crawlClearOnStart === 'boolean') crawlClearOnStart.value = config.crawlClearOnStart;
+};
+
+const loadTemplates = () => {
+  try {
+    const raw = localStorage.getItem(TEMPLATES_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    templates.value = Array.isArray(parsed) ? parsed : [];
+  } catch (_) {
+    templates.value = [];
+  }
+};
+
+const saveTemplates = () => {
+  try {
+    localStorage.setItem(TEMPLATES_KEY, JSON.stringify(templates.value || []));
+  } catch (_) {}
+};
+
+const templateOptions = computed(() => {
+  return (templates.value || []).map(t => ({ label: t.name, value: t.id }));
+});
+
+const openSaveTemplate = () => {
+  templateModalMode.value = 'save';
+  templateNameInput.value = '';
+  templateModalVisible.value = true;
+};
+
+const openLoadTemplate = () => {
+  templateModalMode.value = 'load';
+  selectedTemplateId.value = '';
+  templateModalVisible.value = true;
+};
+
+const confirmSaveTemplate = () => {
+  const name = (templateNameInput.value || '').trim();
+  if (!name) {
+    message.warning('请输入模板名称');
+    return;
+  }
+  const id = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  const snapshot = getCurrentConfigSnapshot();
+  templates.value = [{ id, name, snapshot, updatedAt: Date.now() }, ...(templates.value || [])];
+  saveTemplates();
+  templateModalVisible.value = false;
+  message.success('模板已保存');
+};
+
+const confirmLoadTemplate = () => {
+  const id = selectedTemplateId.value;
+  const tpl = (templates.value || []).find(t => t.id === id);
+  if (!tpl) {
+    message.warning('请选择模板');
+    return;
+  }
+  applyConfigSnapshot(tpl.snapshot);
+  templateModalVisible.value = false;
+  scheduleRefreshPreview();
+  message.success('模板已加载');
+};
+
+const deleteSelectedTemplate = () => {
+  const id = selectedTemplateId.value;
+  if (!id) return;
+  templates.value = (templates.value || []).filter(t => t.id !== id);
+  saveTemplates();
+  selectedTemplateId.value = '';
+  message.success('模板已删除');
+};
+
+const autosaveTimer = ref(null);
+const scheduleAutosave = () => {
+  if (autosaveTimer.value) clearTimeout(autosaveTimer.value);
+  autosaveTimer.value = setTimeout(() => {
+    try {
+      localStorage.setItem(LAST_CONFIG_KEY, JSON.stringify(getCurrentConfigSnapshot()));
+    } catch (_) {}
+  }, 400);
+};
+
+watch(
+  () => getCurrentConfigSnapshot(),
+  () => scheduleAutosave(),
+  { deep: true }
+);
+
 // --- Import/Export Logic ---
 const fileInput = ref(null);
 
@@ -590,10 +1166,25 @@ const exportRules = () => {
   const config = {
     targetUrl: targetUrl.value,
     requestMethod: requestMethod.value,
-    fields: fields,
+    fields: cloneFields(),
     listMode: listMode.value,
     listSelector: listSelector.value,
-    headers: requestHeaders.value
+    headers: cloneHeaders(),
+    requestTimeout: requestTimeout.value,
+    proxyUrl: proxyUrl.value,
+    acceptInvalidCerts: acceptInvalidCerts.value,
+
+    startUrlsText: startUrlsText.value,
+    crawlMaxPages: crawlMaxPages.value,
+    crawlConcurrency: crawlConcurrency.value,
+    crawlDelayMs: crawlDelayMs.value,
+    crawlRetry: crawlRetry.value,
+    discoverLinksSelector: discoverLinksSelector.value,
+    discoverLinksAttr: discoverLinksAttr.value,
+    discoverLinksCustomAttr: discoverLinksCustomAttr.value,
+    nextPageSelector: nextPageSelector.value,
+    nextPageAttr: nextPageAttr.value,
+    nextPageCustomAttr: nextPageCustomAttr.value
   };
   downloadFile('scraper-rules.json', JSON.stringify(config, null, 2));
 };
@@ -614,11 +1205,27 @@ const importRules = (event) => {
       if (config.requestMethod) requestMethod.value = config.requestMethod;
       if (config.fields) {
         fields.length = 0;
-        fields.push(...config.fields);
+        fields.push(...normalizeFields(config.fields));
       }
       if (config.listMode !== undefined) listMode.value = config.listMode;
       if (config.listSelector) listSelector.value = config.listSelector;
       if (config.headers) requestHeaders.value = config.headers;
+
+      if (typeof config.requestTimeout === 'number') requestTimeout.value = config.requestTimeout;
+      if (typeof config.proxyUrl === 'string') proxyUrl.value = config.proxyUrl;
+      if (typeof config.acceptInvalidCerts === 'boolean') acceptInvalidCerts.value = config.acceptInvalidCerts;
+
+      if (typeof config.startUrlsText === 'string') startUrlsText.value = config.startUrlsText;
+      if (typeof config.crawlMaxPages === 'number') crawlMaxPages.value = config.crawlMaxPages;
+      if (typeof config.crawlConcurrency === 'number') crawlConcurrency.value = config.crawlConcurrency;
+      if (typeof config.crawlDelayMs === 'number') crawlDelayMs.value = config.crawlDelayMs;
+      if (typeof config.crawlRetry === 'number') crawlRetry.value = config.crawlRetry;
+      if (typeof config.discoverLinksSelector === 'string') discoverLinksSelector.value = config.discoverLinksSelector;
+      if (typeof config.discoverLinksAttr === 'string') discoverLinksAttr.value = config.discoverLinksAttr;
+      if (typeof config.discoverLinksCustomAttr === 'string') discoverLinksCustomAttr.value = config.discoverLinksCustomAttr;
+      if (typeof config.nextPageSelector === 'string') nextPageSelector.value = config.nextPageSelector;
+      if (typeof config.nextPageAttr === 'string') nextPageAttr.value = config.nextPageAttr;
+      if (typeof config.nextPageCustomAttr === 'string') nextPageCustomAttr.value = config.nextPageCustomAttr;
       
       message.success('规则导入成功');
       refreshPreview();
@@ -662,6 +1269,311 @@ const downloadFile = (filename, content, type = 'text/plain') => {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+};
+
+const parseStartUrls = () => {
+  const text = (startUrlsText.value || '').trim();
+  const list = text
+    ? text.split(/\r?\n/).map(x => normalizedUrl(x)).filter(Boolean)
+    : (targetUrl.value ? [normalizedUrl(targetUrl.value)] : []);
+  return Array.from(new Set(list));
+};
+
+const enqueueUrls = (urls) => {
+  const set = new Set(crawlQueue.value);
+  (urls || []).forEach(u => {
+    const nu = normalizedUrl(u);
+    if (!nu) return;
+    if (!set.has(nu)) {
+      set.add(nu);
+      crawlQueue.value.push(nu);
+    }
+  });
+};
+
+const useCurrentUrlAsStart = () => {
+  const u = normalizedUrl(targetUrl.value);
+  if (!u) return;
+  const current = (startUrlsText.value || '').trim();
+  startUrlsText.value = current ? (current + '\n' + u) : u;
+};
+
+const importStartUrlsToQueue = () => {
+  const urls = parseStartUrls();
+  if (!urls.length) {
+    message.warning('没有可导入的 URL');
+    return;
+  }
+  enqueueUrls(urls);
+  message.success(`已导入 ${urls.length} 个 URL 到队列`);
+};
+
+const clearCrawlQueue = () => {
+  crawlQueue.value = [];
+};
+
+const clearCrawlResults = () => {
+  crawlResults.value = [];
+  crawlProcessed.value = 0;
+};
+
+const togglePauseCrawl = () => {
+  if (!crawlRunning.value) return;
+  crawlPaused.value = !crawlPaused.value;
+  pushCrawlLog(crawlPaused.value ? '任务已暂停' : '任务已继续');
+};
+
+const stopCrawl = () => {
+  crawlRunning.value = false;
+  crawlPaused.value = false;
+  crawlActiveUrls.value = [];
+  crawlRunId.value += 1;
+};
+
+const getAttrValue = (el, attr, customAttr) => {
+  if (!el) return '';
+  if (attr === 'custom') return el.getAttribute(customAttr || '');
+  return el.getAttribute(attr);
+};
+
+const extractFromDocForTask = (doc, pageUrl) => {
+  if (!doc) return [];
+  const results = [];
+  if (listMode.value && listSelector.value) {
+    const items = Array.from(doc.querySelectorAll(listSelector.value));
+    items.forEach((item, idx) => {
+      const row = { __url: pageUrl, __index: idx + 1 };
+      fields.forEach(field => {
+        if (field.name && field.selector) {
+          const el = item.querySelector(field.selector);
+          row[field.name] = extractValue(el, field, pageUrl);
+        }
+      });
+      results.push(row);
+    });
+  } else {
+    const row = { __url: pageUrl, __index: 1 };
+    fields.forEach(field => {
+      if (field.name && field.selector) {
+        const el = doc.querySelector(field.selector);
+        row[field.name] = extractValue(el, field, pageUrl);
+      }
+    });
+    results.push(row);
+  }
+  return results;
+};
+
+const discoverUrlsFromDoc = (doc, pageUrl) => {
+  const sel = (discoverLinksSelector.value || '').trim();
+  if (!sel) return [];
+  try {
+    const nodes = Array.from(doc.querySelectorAll(sel));
+    const urls = nodes
+      .map(el => getAttrValue(el, discoverLinksAttr.value, discoverLinksCustomAttr.value))
+      .filter(Boolean)
+      .map(u => safeResolveUrl(pageUrl, u));
+    return Array.from(new Set(urls));
+  } catch (_) {
+    return [];
+  }
+};
+
+const getNextPageUrlFromDoc = (doc, pageUrl) => {
+  const sel = (nextPageSelector.value || '').trim();
+  if (!sel) {
+    try {
+      const links = Array.from(doc.querySelectorAll('a'));
+      const preferred = links.find(a => {
+        const text = (a.textContent || '').trim();
+        if (!text) return false;
+        return text.includes('下一章') || text.includes('下章') || text.includes('下一页') || text.includes('下页');
+      });
+      const href = preferred ? preferred.getAttribute('href') : '';
+      return href ? safeResolveUrl(pageUrl, href) : '';
+    } catch (_) {
+      return '';
+    }
+  }
+  try {
+    const el = doc.querySelector(sel);
+    const raw = getAttrValue(el, nextPageAttr.value, nextPageCustomAttr.value);
+    return raw ? safeResolveUrl(pageUrl, raw) : '';
+  } catch (_) {
+    return '';
+  }
+};
+
+const buildRequestHeadersObject = () => {
+  const headers = {};
+  (requestHeaders.value || []).forEach(h => {
+    if (h.key && h.value) headers[h.key] = h.value;
+  });
+  return headers;
+};
+
+const fetchHtmlForTask = async (url) => {
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: buildRequestHeadersObject(),
+    connectTimeout: requestTimeout.value,
+    ...(proxyUrl.value ? { proxy: { all: proxyUrl.value } } : {}),
+    ...(acceptInvalidCerts.value
+      ? { danger: { acceptInvalidCerts: true, acceptInvalidHostnames: true } }
+      : {})
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP Error: ${response.status}`);
+  }
+  return await response.text();
+};
+
+const crawlTableColumns = computed(() => {
+  const cols = [
+    { title: '__url', dataIndex: '__url', key: '__url' },
+    { title: '__index', dataIndex: '__index', key: '__index', width: 80 }
+  ];
+  fields
+    .filter(f => f && f.name)
+    .forEach(f => {
+      cols.push({ title: f.name, dataIndex: f.name, key: f.name });
+    });
+  return cols;
+});
+
+const exportCrawlData = (type) => {
+  if (!crawlResults.value || crawlResults.value.length === 0) return;
+
+  if (type === 'json') {
+    downloadFile('crawl-data.json', JSON.stringify(crawlResults.value, null, 2));
+    return;
+  }
+  if (type === 'csv') {
+    const data = crawlResults.value;
+    const headers = Array.from(new Set(data.flatMap(row => Object.keys(row || {}))));
+    const csvContent = [
+      headers.join(','),
+      ...data.map(row => headers.map(k => {
+        let val = row?.[k] ?? '';
+        val = String(val).replace(/"/g, '""');
+        return `"${val}"`;
+      }).join(','))
+    ].join('\n');
+    downloadFile('crawl-data.csv', csvContent, 'text/csv');
+  }
+};
+
+const startCrawl = async () => {
+  if (crawlRunning.value) return;
+  const runId = crawlRunId.value + 1;
+  crawlRunId.value = runId;
+
+  if (crawlClearOnStart.value) {
+    clearCrawlResults();
+    clearCrawlFailures();
+    clearCrawlLogs();
+  }
+
+  crawlPaused.value = false;
+
+  const starters = parseStartUrls();
+  enqueueUrls(starters);
+
+  if (crawlQueue.value.length === 0) {
+    message.warning('队列为空');
+    return;
+  }
+
+  crawlRunning.value = true;
+  const visited = new Set();
+  const dedupSet = new Set();
+  pushCrawlLog(`开始任务：并发=${crawlConcurrency.value} 间隔=${crawlDelayMs.value}ms 最大页数=${crawlMaxPages.value}`);
+
+  const worker = async () => {
+    while (crawlRunning.value && crawlRunId.value === runId) {
+      if (crawlProcessed.value >= crawlMaxPages.value) break;
+
+      while (crawlPaused.value && crawlRunning.value && crawlRunId.value === runId) {
+        await sleep(150);
+      }
+
+      const url = crawlQueue.value.shift();
+      if (!url) break;
+      if (visited.has(url)) continue;
+      visited.add(url);
+
+      crawlActiveUrls.value = Array.from(new Set([...(crawlActiveUrls.value || []), url]));
+      pushCrawlLog(`抓取: ${url}`);
+
+      let attempt = 0;
+      while (crawlRunning.value && crawlRunId.value === runId) {
+        try {
+          const html = await fetchHtmlForTask(url);
+          const doc = new DOMParser().parseFromString(html, 'text/html');
+
+          const rows = extractFromDocForTask(doc, url);
+          rows.forEach((r, idx) => {
+            if (crawlDedupEnabled.value) {
+              const keyName = crawlDedupKey.value || '__url';
+              const keyVal = (keyName === '__url') ? url : (r?.[keyName] ?? '');
+              const dedupKeyVal = String(keyVal ?? '');
+              if (dedupKeyVal && dedupSet.has(dedupKeyVal)) return;
+              if (dedupKeyVal) dedupSet.add(dedupKeyVal);
+            }
+            crawlResults.value.push({ __rowKey: `${url}__${idx}__${Date.now()}`, ...r });
+          });
+
+          if (rows.length) pushCrawlLog(`提取结果: ${rows.length} 条`);
+
+          const discovered = discoverUrlsFromDoc(doc, url);
+          if (discovered.length) {
+            enqueueUrls(discovered);
+            pushCrawlLog(`发现链接: +${discovered.length}`);
+          }
+
+          const nextUrl = getNextPageUrlFromDoc(doc, url);
+          if (nextUrl) {
+            enqueueUrls([nextUrl]);
+            pushCrawlLog(`发现下一页: ${nextUrl}`);
+          }
+
+          crawlProcessed.value += 1;
+          break;
+        } catch (e) {
+          attempt += 1;
+          if (attempt > (crawlRetry.value || 0)) {
+            crawlFailures.value.push({
+              id: `${Date.now()}_${Math.random().toString(16).slice(2)}`,
+              time: new Date().toLocaleTimeString(),
+              url,
+              error: (e && e.message) ? String(e.message) : String(e)
+            });
+            pushCrawlLog(`失败: ${url}`);
+            crawlProcessed.value += 1;
+            break;
+          }
+          await sleep(200);
+        }
+      }
+
+      crawlActiveUrls.value = (crawlActiveUrls.value || []).filter(x => x !== url);
+
+      await sleep(crawlDelayMs.value);
+    }
+  };
+
+  try {
+    const n = Math.max(1, Math.min(8, crawlConcurrency.value || 1));
+    await Promise.all(Array.from({ length: n }, () => worker()));
+  } finally {
+    if (crawlRunId.value === runId) {
+      crawlRunning.value = false;
+      crawlPaused.value = false;
+      crawlActiveUrls.value = [];
+      pushCrawlLog('任务结束');
+    }
+  }
 };
 
 // --- Browser & Inspector Logic ---
@@ -724,10 +1636,12 @@ const fetchPage = async () => {
     }
     
     const html = await response.text();
+    rawHtml.value = html;
     processedHtml.value = injectInspectorScript(html, targetUrl.value);
     addToHistory(targetUrl.value);
     
     message.success('页面加载成功');
+    scheduleRefreshPreview();
   } catch (error) {
     console.error('Scraper fetchPage error:', {
       error,
@@ -746,7 +1660,14 @@ const fetchPage = async () => {
 const injectInspectorScript = (html, baseUrl) => {
   // Add base tag
   const baseTag = `<base href="${baseUrl}" target="_blank">`;
-  let processed = html.replace('<head>', `<head>${baseTag}`);
+  let processed = html;
+  if (/<head[\s>]/i.test(processed)) {
+    processed = processed.replace(/<head([^>]*)>/i, `<head$1>${baseTag}`);
+  } else if (/<html[\s>]/i.test(processed)) {
+    processed = processed.replace(/<html([^>]*)>/i, `<html$1><head>${baseTag}</head>`);
+  } else {
+    processed = `<head>${baseTag}</head>` + processed;
+  }
   
   // Inject Inspector Script
   const script = `
@@ -754,6 +1675,7 @@ const injectInspectorScript = (html, baseUrl) => {
       (function() {
         let active = false;
         let highlighted = null;
+        let highlightedList = [];
         
         window.addEventListener('message', (event) => {
           if (event.data.type === 'toggle-inspector') {
@@ -762,6 +1684,18 @@ const injectInspectorScript = (html, baseUrl) => {
               highlighted.style.outline = '';
               highlighted = null;
             }
+          }
+          if (event.data.type === 'highlight-selector') {
+            try {
+              highlightedList.forEach(el => { try { el.style.outline = ''; } catch (_) {} });
+              highlightedList = [];
+              const selector = event.data.selector;
+              if (!selector) return;
+              const list = Array.from(document.querySelectorAll(selector));
+              list.forEach(el => { el.style.outline = '2px dashed #52c41a'; });
+              highlightedList = list;
+              if (list[0] && list[0].scrollIntoView) list[0].scrollIntoView({ block: 'center', behavior: 'smooth' });
+            } catch (e) {}
           }
         });
 
@@ -793,33 +1727,93 @@ const injectInspectorScript = (html, baseUrl) => {
           }, '*');
         }, true);
 
-        // Simple selector generator
         function generateSelector(el) {
-          if (el.tagName.toLowerCase() === 'html') return 'html';
-          if (el.tagName.toLowerCase() === 'body') return 'body';
-          if (el.id) return '#' + el.id;
-          
+          const tag = (el && el.tagName) ? el.tagName.toLowerCase() : '';
+          if (tag === 'html') return 'html';
+          if (tag === 'body') return 'body';
+
+          function isUnique(selector) {
+            try {
+              return document.querySelectorAll(selector).length === 1;
+            } catch (e) {
+              return false;
+            }
+          }
+
+          function generalizedIdSelector(tagName, id) {
+            const raw = String(id || '');
+            const m = raw.match(/^([a-zA-Z_-]+)_([0-9]{5,})$/);
+            if (m) {
+              const prefix = m[1];
+              const sel = (tagName ? tagName : '') + '[id^="' + prefix + '_"]';
+              return sel;
+            }
+            return '';
+          }
+
+          if (el.id) {
+            const gen = generalizedIdSelector(tag, el.id);
+            if (gen && isUnique(gen)) return gen;
+            return '#' + el.id;
+          }
+
+          const ignoreClasses = new Set([
+            'active', 'on', 'cur', 'current', 'hover', 'clearfix', 'fl', 'fr'
+          ]);
+          const classList = Array.from(el.classList || []).filter(Boolean).filter(c => !ignoreClasses.has(c));
+          if (classList.length) {
+            const c = classList[0];
+            const sel = tag + '.' + CSS.escape(c);
+            if (isUnique(sel)) return sel;
+          }
+
           const path = [];
-          while (el.nodeType === Node.ELEMENT_NODE) {
-            let selector = el.nodeName.toLowerCase();
-            if (el.id) {
-              selector += '#' + el.id;
+          let node = el;
+          while (node && node.nodeType === Node.ELEMENT_NODE) {
+            let selector = node.nodeName.toLowerCase();
+
+            if (node.id) {
+              const gen = generalizedIdSelector(selector, node.id);
+              if (gen && isUnique(gen)) {
+                path.unshift(gen);
+                break;
+              }
+              selector += '#' + node.id;
               path.unshift(selector);
               break;
-            } else {
-              let sib = el, nth = 1;
-              while (sib = sib.previousElementSibling) {
-                if (sib.nodeName.toLowerCase() == selector)
-                  nth++;
-              }
-              if (nth != 1)
-                selector += ":nth-of-type("+nth+")";
             }
+
+            const cls = Array.from(node.classList || []).filter(Boolean).filter(c => !ignoreClasses.has(c));
+            if (cls.length) {
+              const maybe = selector + '.' + CSS.escape(cls[0]);
+              if (isUnique(maybe)) {
+                path.unshift(maybe);
+                break;
+              }
+            }
+
+            let sib = node, nth = 1;
+            while (sib = sib.previousElementSibling) {
+              if (sib.nodeName.toLowerCase() === selector) nth++;
+            }
+            if (nth !== 1) selector += ':nth-of-type(' + nth + ')';
             path.unshift(selector);
-            el = el.parentNode;
-            if (el.tagName.toLowerCase() === 'body') break;
+            node = node.parentNode;
+            if (node && node.tagName && node.tagName.toLowerCase() === 'body') break;
           }
-          return path.join(" > ");
+
+          const full = path.join(' > ');
+          if (!full) return tag;
+
+          try {
+            const parts = full.split(' > ').map(x => x.trim()).filter(Boolean);
+            for (let i = 0; i < parts.length; i++) {
+              const candidate = parts.slice(i).join(' > ');
+              if (isUnique(candidate)) return candidate;
+            }
+          } catch (e) {}
+
+          return full;
         }
       })();
     <\/script>
@@ -838,7 +1832,7 @@ const toggleInspector = () => {
 };
 
 watch(isInspectorActive, (active) => {
-   if (!processedHtml.value) {
+   if (!rawHtml.value) {
      if(active) message.warning("请先加载页面");
      return;
    }
@@ -854,7 +1848,7 @@ watch(isInspectorActive, (active) => {
 const handleMessage = (event) => {
   if (event.data.type === 'element-selected') {
     if (currentFieldIndex.value !== -1 && fields[currentFieldIndex.value]) {
-      fields[currentFieldIndex.value].selector = event.data.selector;
+      fields[currentFieldIndex.value].selector = optimizeSelector(String(event.data.selector || ''));
       message.success(`已选择: ${event.data.tagName}`);
       // Refresh preview automatically
       scheduleRefreshPreview();
@@ -901,6 +1895,17 @@ onMounted(() => {
   window.addEventListener('message', handleMessage);
   window.addEventListener('keydown', handleKeydown);
   loadUrlHistory();
+  loadTemplates();
+
+  try {
+    const raw = localStorage.getItem(LAST_CONFIG_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (parsed && typeof parsed === 'object') {
+      applyConfigSnapshot(parsed);
+    }
+  } catch (_) {
+    // ignore
+  }
 
   try {
     const raw = localStorage.getItem(PICK_SETTINGS_KEY);
@@ -928,9 +1933,14 @@ watch([autoExitOnPick, autoAdvanceOnPick], () => {
 onUnmounted(() => {
   window.removeEventListener('message', handleMessage);
   window.removeEventListener('keydown', handleKeydown);
+  stopCrawl();
   if (refreshTimer.value) {
     clearTimeout(refreshTimer.value);
     refreshTimer.value = null;
+  }
+  if (autosaveTimer.value) {
+    clearTimeout(autosaveTimer.value);
+    autosaveTimer.value = null;
   }
 });
 
@@ -981,6 +1991,60 @@ const clearFieldSelector = (index) => {
 // --- Preview Logic ---
 const previewResult = ref([]);
 
+const cachedDocHtml = ref('');
+const cachedDoc = ref(null);
+const getParsedDoc = () => {
+  const html = rawHtml.value || '';
+  if (!html) return null;
+  if (cachedDoc.value && cachedDocHtml.value === html) return cachedDoc.value;
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
+  cachedDoc.value = doc;
+  cachedDocHtml.value = html;
+  return doc;
+};
+
+const isSelectorUnique = (doc, selector) => {
+  try {
+    return doc.querySelectorAll(selector).length === 1;
+  } catch (_) {
+    return false;
+  }
+};
+
+const optimizeSelector = (selector) => {
+  const s = (selector || '').trim();
+  if (!s) return s;
+  const doc = getParsedDoc();
+  if (!doc) return s;
+
+  const generalizeDynamicIds = (sel) => {
+    return sel
+      .replace(/([a-z0-9_-]+)?#([a-zA-Z_-]+)_([0-9]{5,})/g, (m, tag, prefix) => {
+        const t = tag ? tag : '';
+        return `${t}[id^="${prefix}_"]`;
+      });
+  };
+
+  if (s.includes('#')) {
+    const gen = generalizeDynamicIds(s);
+    if (gen !== s && isSelectorUnique(doc, gen)) return gen;
+    return s;
+  }
+
+  let best = s;
+  const withoutNthAll = best.replace(/:nth-of-type\(\d+\)/g, '');
+  if (withoutNthAll && isSelectorUnique(doc, withoutNthAll)) best = withoutNthAll;
+
+  const parts = best.split(' > ').map(x => x.trim()).filter(Boolean);
+  for (let cut = 0; cut < parts.length - 1; cut++) {
+    const candidate = parts.slice(cut).join(' > ');
+    if (candidate && isSelectorUnique(doc, candidate)) best = candidate;
+  }
+
+  return best;
+};
+
 const tableColumns = computed(() => {
   return fields
     .filter(f => f && f.name)
@@ -1012,11 +2076,10 @@ const scheduleRefreshPreview = () => {
 };
 
 const refreshPreview = () => {
-  if (!processedHtml.value) return;
+  if (!rawHtml.value) return;
   
-  // Create a temporary DOM parser
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(processedHtml.value, 'text/html');
+  const doc = getParsedDoc();
+  if (!doc) return;
   
   if (listMode.value && listSelector.value) {
     // List Mode
@@ -1027,7 +2090,7 @@ const refreshPreview = () => {
       fields.forEach(field => {
         if (field.name && field.selector) {
           const el = item.querySelector(field.selector);
-          row[field.name] = extractValue(el, field);
+          row[field.name] = extractValue(el, field, targetUrl.value);
         }
       });
       results.push(row);
@@ -1039,14 +2102,14 @@ const refreshPreview = () => {
     fields.forEach(field => {
       if (field.name && field.selector) {
         const el = doc.querySelector(field.selector);
-        row[field.name] = extractValue(el, field);
+        row[field.name] = extractValue(el, field, targetUrl.value);
       }
     });
     previewResult.value = row;
   }
 };
 
-const extractValue = (el, field) => {
+const extractValue = (el, field, baseUrl) => {
   if (!el) return null;
   let val = '';
   switch (field.attr) {
@@ -1056,6 +2119,10 @@ const extractValue = (el, field) => {
     case 'src': val = el.getAttribute('src'); break;
     case 'custom': val = el.getAttribute(field.customAttr); break;
     default: val = el.textContent.trim();
+  }
+
+  if ((field.attr === 'href' || field.attr === 'src') && typeof val === 'string') {
+    val = safeResolveUrl(baseUrl, val);
   }
 
   // Transformations
@@ -1101,14 +2168,17 @@ const copyPreviewData = async () => {
 };
 
 const detectListSelector = () => {
-  if (!processedHtml.value) {
+  if (!rawHtml.value) {
     message.warning('请先加载页面');
     return;
   }
 
   try {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(processedHtml.value, 'text/html');
+    const doc = getParsedDoc();
+    if (!doc) {
+      message.error('页面解析失败');
+      return;
+    }
     const body = doc.body;
     if (!body) {
       message.error('页面解析失败');
@@ -1157,6 +2227,22 @@ const detectListSelector = () => {
 watch([fields, listMode, listSelector], () => {
   scheduleRefreshPreview();
 }, { deep: true });
+
+const highlightSelectorInPreview = (selector) => {
+  const sel = (selector || '').trim();
+  if (!sel) return;
+  if (!processedHtml.value) return;
+  if (!previewFrame.value || !previewFrame.value.contentWindow) return;
+  previewFrame.value.contentWindow.postMessage({
+    type: 'highlight-selector',
+    selector: sel
+  }, '*');
+};
+
+const highlightFieldSelector = (index) => {
+  if (!fields[index]) return;
+  highlightSelectorInPreview(fields[index].selector);
+};
 
 
 // --- Code Generation ---
@@ -1745,10 +2831,26 @@ const downloadCode = () => {
 
 :deep(.ant-tabs-content) {
    flex: 1;
+   min-height: 0;
+   display: flex;
+}
+
+:deep(.ant-tabs-content-holder) {
+   flex: 1;
+   min-height: 0;
+   display: flex;
+}
+
+:deep(.ant-tabs-tabpane) {
+   flex: 1;
+   min-height: 0;
+   display: flex;
+   flex-direction: column;
 }
 
 .config-content {
-   height: 100%;
+   flex: 1;
+   min-height: 0;
    overflow-y: auto;
    padding: 16px;
 }
@@ -2103,6 +3205,161 @@ const downloadCode = () => {
 
 .code-editor-container pre {
     margin: 0;
+}
+
+.template-modal-body {
+  padding-top: 4px;
+}
+
+.template-load-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.help-modal-body {
+  max-height: 70vh;
+  overflow: auto;
+  padding-right: 8px;
+}
+
+.help-modal-body h3 {
+  margin: 12px 0 8px;
+  font-size: 14px;
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.help-modal-body ul,
+.help-modal-body ol {
+  margin: 0 0 10px;
+  padding-left: 18px;
+}
+
+.help-modal-body li {
+  line-height: 1.7;
+  color: #334155;
+}
+
+.task-tab-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.task-section {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.task-section-title {
+  font-size: 12px;
+  color: #64748b;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.task-actions-row {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.task-stats-row {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.task-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.task-grid-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.task-subgrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.task-subgrid-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.task-label {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.task-empty {
+  padding: 14px;
+  border-radius: 8px;
+  border: 1px dashed #e2e8f0;
+  color: #94a3b8;
+  background: #f8fafc;
+  text-align: center;
+}
+
+.task-popover {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.task-popover-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.task-panel-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.task-panel-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.task-panel-title {
+  font-size: 12px;
+  color: #475569;
+  font-weight: 600;
+}
+
+.task-log-box {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #0b1220;
+  color: #e2e8f0;
+  padding: 10px;
+  max-height: 260px;
+  overflow: auto;
+}
+
+.task-log-line {
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* List Transition */

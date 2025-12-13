@@ -427,7 +427,7 @@ const editorConfig = ref({
 });
 
 const selectedTemplate = ref("idcard_front");
-const activeCollapseKeys = ref(["2", "3"]);
+const activeCollapseKeys = ref(["1", "2", "3"]);
 
 const textFields = ref([
   { id: "name", label: "姓名", text: "", x: 100, y: 100 },

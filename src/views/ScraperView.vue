@@ -542,162 +542,7 @@
             </div>
           </a-tab-pane>
 
-          <a-tab-pane key="api">
-            <template #tab>
-              <span class="tab-label"> API </span>
-            </template>
-
-            <div class="config-content">
-              <div style="display: flex; flex-direction: column; gap: 12px">
-                <div style="display: flex; gap: 8px; align-items: center">
-                  <a-select v-model:value="apiMode.method" style="width: 120px">
-                    <a-select-option value="GET">GET</a-select-option>
-                    <a-select-option value="POST">POST</a-select-option>
-                  </a-select>
-                  <a-input
-                    v-model:value="apiMode.url"
-                    placeholder="接口 URL (https://...)"
-                  />
-                  <a-button
-                    type="primary"
-                    :loading="apiLoading"
-                    @click="runApiRequest"
-                  >
-                    请求
-                  </a-button>
-                </div>
-
-                <div style="display: flex; gap: 8px; align-items: center">
-                  <a-input
-                    v-model:value="apiMode.dataPath"
-                    placeholder="数据路径 (可选，例如 data.list 或 result.items)"
-                  />
-                  <a-tag v-if="apiResponseStatus" color="blue">
-                    {{ apiResponseStatus }} {{ apiResponseStatusText }} ({{
-                      apiResponseTimeMs
-                    }}ms)
-                  </a-tag>
-                </div>
-
-                <div>
-                  <div style="font-weight: 600; margin-bottom: 6px">
-                    Headers
-                  </div>
-                  <div
-                    v-for="(h, idx) in apiMode.headers"
-                    :key="idx"
-                    style="
-                      display: flex;
-                      gap: 8px;
-                      align-items: center;
-                      margin-bottom: 6px;
-                    "
-                  >
-                    <a-input v-model:value="h.key" placeholder="Key" />
-                    <a-input v-model:value="h.value" placeholder="Value" />
-                    <a-button type="text" danger @click="removeApiHeader(idx)">
-                      <DeleteOutlined />
-                    </a-button>
-                  </div>
-                  <a-button type="dashed" block @click="addApiHeader">
-                    <PlusOutlined /> 添加 Header
-                  </a-button>
-                </div>
-
-                <div
-                  v-if="apiMode.method !== 'GET'"
-                  style="display: flex; flex-direction: column; gap: 6px"
-                >
-                  <div style="font-weight: 600">Body</div>
-                  <a-textarea
-                    v-model:value="apiMode.body"
-                    :auto-size="{ minRows: 4, maxRows: 10 }"
-                    placeholder="请求体（建议 JSON 字符串）"
-                  />
-                </div>
-
-                <div>
-                  <div
-                    style="
-                      display: flex;
-                      justify-content: space-between;
-                      align-items: center;
-                      margin-bottom: 6px;
-                    "
-                  >
-                    <div style="font-weight: 600">字段映射（name/path）</div>
-                    <a-button size="small" @click="addExtractField">
-                      <PlusOutlined /> 添加
-                    </a-button>
-                  </div>
-                  <div
-                    v-if="apiMode.extract.length === 0"
-                    style="color: #94a3b8"
-                  >
-                    暂无映射，默认直接输出 dataPath 对应的数据
-                  </div>
-                  <div
-                    v-for="(m, idx) in apiMode.extract"
-                    :key="idx"
-                    style="
-                      display: flex;
-                      gap: 8px;
-                      align-items: center;
-                      margin-bottom: 6px;
-                    "
-                  >
-                    <a-input
-                      v-model:value="m.name"
-                      placeholder="字段名"
-                      style="width: 160px"
-                    />
-                    <a-input
-                      v-model:value="m.path"
-                      placeholder="路径（例如 title 或 item.title 或 a.b[0].c）"
-                    />
-                    <a-button
-                      type="text"
-                      danger
-                      @click="removeExtractField(idx)"
-                    >
-                      <DeleteOutlined />
-                    </a-button>
-                  </div>
-                </div>
-
-                <div>
-                  <div style="font-weight: 600; margin-bottom: 6px">
-                    提取结果预览
-                  </div>
-                  <div
-                    v-if="apiResponseError"
-                    style="color: #ef4444; white-space: pre-wrap"
-                  >
-                    {{ apiResponseError }}
-                  </div>
-                  <div v-else-if="!apiHasExtracted" style="color: #94a3b8">
-                    暂无数据
-                  </div>
-                  <pre
-                    v-else
-                    style="margin: 0; max-height: 420px; overflow: auto"
-                    >{{ apiExtractedJson }}</pre
-                  >
-                </div>
-
-                <div>
-                  <div style="font-weight: 600; margin-bottom: 6px">
-                    原始响应
-                  </div>
-                  <pre style="margin: 0; max-height: 260px; overflow: auto">{{
-                    apiResponseText
-                  }}</pre>
-                </div>
-              </div>
-            </div>
-          </a-tab-pane>
-
-          <a-tab-pane key="task">
+                 <a-tab-pane key="task">
             <template #tab>
               <span class="tab-label"> 执行 </span>
             </template>
@@ -892,6 +737,9 @@
                         <a-menu-item @click="exportCrawlData('csv')"
                           ><TableOutlined /> 导出 CSV</a-menu-item
                         >
+                        <a-menu-item @click="exportCrawlData('txt')"
+                          ><FileTextOutlined /> 导出 TXT</a-menu-item
+                        >
                       </a-menu>
                     </template>
                     <a-button :disabled="crawlResults.length === 0"
@@ -1014,6 +862,163 @@
               </div>
             </div>
           </a-tab-pane>
+
+          <a-tab-pane key="api">
+            <template #tab>
+              <span class="tab-label"> API </span>
+            </template>
+
+            <div class="config-content">
+              <div style="display: flex; flex-direction: column; gap: 12px">
+                <div style="display: flex; gap: 8px; align-items: center">
+                  <a-select v-model:value="apiMode.method" style="width: 120px">
+                    <a-select-option value="GET">GET</a-select-option>
+                    <a-select-option value="POST">POST</a-select-option>
+                  </a-select>
+                  <a-input
+                    v-model:value="apiMode.url"
+                    placeholder="接口 URL (https://...)"
+                  />
+                  <a-button
+                    type="primary"
+                    :loading="apiLoading"
+                    @click="runApiRequest"
+                  >
+                    请求
+                  </a-button>
+                </div>
+
+                <div style="display: flex; gap: 8px; align-items: center">
+                  <a-input
+                    v-model:value="apiMode.dataPath"
+                    placeholder="数据路径 (可选，例如 data.list 或 result.items)"
+                  />
+                  <a-tag v-if="apiResponseStatus" color="blue">
+                    {{ apiResponseStatus }} {{ apiResponseStatusText }} ({{
+                      apiResponseTimeMs
+                    }}ms)
+                  </a-tag>
+                </div>
+
+                <div>
+                  <div style="font-weight: 600; margin-bottom: 6px">
+                    Headers
+                  </div>
+                  <div
+                    v-for="(h, idx) in apiMode.headers"
+                    :key="idx"
+                    style="
+                      display: flex;
+                      gap: 8px;
+                      align-items: center;
+                      margin-bottom: 6px;
+                    "
+                  >
+                    <a-input v-model:value="h.key" placeholder="Key" />
+                    <a-input v-model:value="h.value" placeholder="Value" />
+                    <a-button type="text" danger @click="removeApiHeader(idx)">
+                      <DeleteOutlined />
+                    </a-button>
+                  </div>
+                  <a-button type="dashed" block @click="addApiHeader">
+                    <PlusOutlined /> 添加 Header
+                  </a-button>
+                </div>
+
+                <div
+                  v-if="apiMode.method !== 'GET'"
+                  style="display: flex; flex-direction: column; gap: 6px"
+                >
+                  <div style="font-weight: 600">Body</div>
+                  <a-textarea
+                    v-model:value="apiMode.body"
+                    :auto-size="{ minRows: 4, maxRows: 10 }"
+                    placeholder="请求体（建议 JSON 字符串）"
+                  />
+                </div>
+
+                <div>
+                  <div
+                    style="
+                      display: flex;
+                      justify-content: space-between;
+                      align-items: center;
+                      margin-bottom: 6px;
+                    "
+                  >
+                    <div style="font-weight: 600">字段映射（name/path）</div>
+                    <a-button size="small" @click="addExtractField">
+                      <PlusOutlined /> 添加
+                    </a-button>
+                  </div>
+                  <div
+                    v-if="apiMode.extract.length === 0"
+                    style="color: #94a3b8"
+                  >
+                    暂无映射，默认直接输出 dataPath 对应的数据
+                  </div>
+                  <div
+                    v-for="(m, idx) in apiMode.extract"
+                    :key="idx"
+                    style="
+                      display: flex;
+                      gap: 8px;
+                      align-items: center;
+                      margin-bottom: 6px;
+                    "
+                  >
+                    <a-input
+                      v-model:value="m.name"
+                      placeholder="字段名"
+                      style="width: 160px"
+                    />
+                    <a-input
+                      v-model:value="m.path"
+                      placeholder="路径（例如 title 或 item.title 或 a.b[0].c）"
+                    />
+                    <a-button
+                      type="text"
+                      danger
+                      @click="removeExtractField(idx)"
+                    >
+                      <DeleteOutlined />
+                    </a-button>
+                  </div>
+                </div>
+
+                <div>
+                  <div style="font-weight: 600; margin-bottom: 6px">
+                    提取结果预览
+                  </div>
+                  <div
+                    v-if="apiResponseError"
+                    style="color: #ef4444; white-space: pre-wrap"
+                  >
+                    {{ apiResponseError }}
+                  </div>
+                  <div v-else-if="!apiHasExtracted" style="color: #94a3b8">
+                    暂无数据
+                  </div>
+                  <pre
+                    v-else
+                    style="margin: 0; max-height: 420px; overflow: auto"
+                    >{{ apiExtractedJson }}</pre
+                  >
+                </div>
+
+                <div>
+                  <div style="font-weight: 600; margin-bottom: 6px">
+                    原始响应
+                  </div>
+                  <pre style="margin: 0; max-height: 260px; overflow: auto">{{
+                    apiResponseText
+                  }}</pre>
+                </div>
+              </div>
+            </div>
+          </a-tab-pane>
+
+   
           <a-tab-pane key="novel">
             <template #tab>
               <span class="tab-label"> 小说 </span>

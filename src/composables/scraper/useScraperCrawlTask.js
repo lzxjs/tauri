@@ -1,5 +1,5 @@
 import { computed } from 'vue';
-import { buildHeadersObject, downloadFile, normalizedUrl, safeResolveUrl, sleep, toCsv } from './utils';
+import { buildHeadersObject, downloadFile, normalizedUrl, safeResolveUrl, sleep, toCsv, toTxt } from './utils';
 
 export function useScraperCrawlTask({
   targetUrl,
@@ -251,7 +251,10 @@ export function useScraperCrawlTask({
 
     (async () => {
       try {
-        const ext = type === 'csv' ? 'csv' : 'json';
+        let ext = 'json';
+        if (type === 'csv') ext = 'csv';
+        if (type === 'txt') ext = 'txt';
+
         const filePath = await save({
           defaultPath: `crawl-data.${ext}`,
           filters: [{ name: ext.toUpperCase(), extensions: [ext] }]
@@ -264,9 +267,19 @@ export function useScraperCrawlTask({
           return;
         }
 
-        const csvContent = toCsv(crawlResults.value);
-        await writeTextFile(filePath, csvContent);
-        messageApi?.success?.('导出成功');
+        if (type === 'csv') {
+          const csvContent = toCsv(crawlResults.value);
+          await writeTextFile(filePath, csvContent);
+          messageApi?.success?.('导出成功');
+          return;
+        }
+
+        if (type === 'txt') {
+          const txtContent = toTxt(crawlResults.value);
+          await writeTextFile(filePath, txtContent);
+          messageApi?.success?.('导出成功');
+          return;
+        }
       } catch (_) {
         try {
           if (type === 'json') {
@@ -274,9 +287,19 @@ export function useScraperCrawlTask({
             messageApi?.info?.('已使用浏览器下载方式导出');
             return;
           }
-          const csvContent = toCsv(crawlResults.value);
-          downloadFile('crawl-data.csv', csvContent, 'text/csv');
-          messageApi?.info?.('已使用浏览器下载方式导出');
+          if (type === 'csv') {
+            const csvContent = toCsv(crawlResults.value);
+            downloadFile('crawl-data.csv', csvContent, 'text/csv');
+            messageApi?.info?.('已使用浏览器下载方式导出');
+            return;
+          }
+          if (type === 'txt') {
+            const txtContent = toTxt(crawlResults.value);
+            downloadFile('crawl-data.txt', txtContent, 'text/plain');
+            messageApi?.info?.('已使用浏览器下载方式导出');
+            return;
+          }
+          messageApi?.error?.('导出失败');
         } catch (_) {
           messageApi?.error?.('导出失败');
         }

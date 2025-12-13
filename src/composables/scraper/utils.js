@@ -55,3 +55,15 @@ export function toCsv(data) {
   ];
   return lines.join('\n');
 }
+
+export function toTxt(data) {
+  const rows = Array.isArray(data) ? data : [data];
+  if (rows.length === 0) return '';
+  return rows
+    .map((row) => {
+      return Object.entries(row || {})
+        .map(([k, v]) => `${k}: ${v}`)
+        .join('\n');
+    })
+    .join('\n\n--------------------------------------------------\n\n');
+}

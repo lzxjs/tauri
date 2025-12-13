@@ -758,6 +758,8 @@ import {
   QuestionCircleOutlined
 } from '@ant-design/icons-vue';
 import { fetch } from '@tauri-apps/plugin-http';
+import { save } from '@tauri-apps/plugin-dialog';
+import { writeTextFile } from '@tauri-apps/plugin-fs';
 
 // --- State ---
 const targetUrl = ref('');
@@ -869,6 +871,71 @@ const normalizedUrl = (input) => {
   if (!str) return '';
   if (str.startsWith('http://') || str.startsWith('https://')) return str;
   return 'https://' + str;
+};
+
+const parseCharsetFromContentType = (contentType) => {
+  const ct = (contentType || '').toLowerCase();
+  const m = ct.match(/charset\s*=\s*([^;\s]+)/i);
+  return m ? String(m[1]).trim().toLowerCase() : '';
+};
+
+const parseCharsetFromHtmlMeta = (html) => {
+  const s = String(html || '');
+  const m1 = s.match(/<meta[^>]+charset\s*=\s*['\"]?([^'\"\s>]+)/i);
+  if (m1) return String(m1[1]).trim().toLowerCase();
+  const m2 = s.match(/<meta[^>]+http-equiv\s*=\s*['\"]content-type['\"][^>]*content\s*=\s*['\"][^'\"]*charset\s*=\s*([^'\"\s;>]+)/i);
+  if (m2) return String(m2[1]).trim().toLowerCase();
+  return '';
+};
+
+const normalizeDecoderLabel = (charset) => {
+  const c = (charset || '').toLowerCase();
+  if (!c) return '';
+  if (c === 'gbk' || c === 'gb2312' || c === 'gb-2312') return 'gb18030';
+  if (c === 'gb18030') return 'gb18030';
+  return c;
+};
+
+const decodeHtmlFromResponse = async (response) => {
+  try {
+    const buf = await response.arrayBuffer();
+    const ct = response.headers?.get ? response.headers.get('content-type') : '';
+    const headerCharset = normalizeDecoderLabel(parseCharsetFromContentType(ct));
+
+    const decodeWith = (label) => {
+      try {
+        return new TextDecoder(label || 'utf-8').decode(buf);
+      } catch (_) {
+        return new TextDecoder('utf-8').decode(buf);
+      }
+    };
+
+    if (headerCharset) return decodeWith(headerCharset);
+
+    try {
+      const headBuf = buf.slice(0, 4096);
+      const latin1 = new TextDecoder('iso-8859-1').decode(headBuf);
+      const sniffed = normalizeDecoderLabel(parseCharsetFromHtmlMeta(latin1) || parseCharsetFromContentType(latin1));
+      if (sniffed) return decodeWith(sniffed);
+    } catch (_) {
+      // ignore
+    }
+
+    const utf8Text = decodeWith('utf-8');
+    const metaCharset = normalizeDecoderLabel(parseCharsetFromHtmlMeta(utf8Text));
+    if (metaCharset && metaCharset !== 'utf-8') {
+      return decodeWith(metaCharset);
+    }
+
+    const replacementCount = (utf8Text.match(/\uFFFD/g) || []).length;
+    if (replacementCount > 20) {
+      const gbText = decodeWith('gb18030');
+      return gbText || utf8Text;
+    }
+    return utf8Text;
+  } catch (_) {
+    return await response.text();
+  }
 };
 
 const safeResolveUrl = (baseUrl, maybeUrl) => {
@@ -1426,7 +1493,7 @@ const fetchHtmlForTask = async (url) => {
   if (!response.ok) {
     throw new Error(`HTTP Error: ${response.status}`);
   }
-  return await response.text();
+  return await decodeHtmlFromResponse(response);
 };
 
 const crawlTableColumns = computed(() => {
@@ -1445,23 +1512,59 @@ const crawlTableColumns = computed(() => {
 const exportCrawlData = (type) => {
   if (!crawlResults.value || crawlResults.value.length === 0) return;
 
-  if (type === 'json') {
-    downloadFile('crawl-data.json', JSON.stringify(crawlResults.value, null, 2));
-    return;
-  }
-  if (type === 'csv') {
-    const data = crawlResults.value;
-    const headers = Array.from(new Set(data.flatMap(row => Object.keys(row || {}))));
-    const csvContent = [
-      headers.join(','),
-      ...data.map(row => headers.map(k => {
-        let val = row?.[k] ?? '';
-        val = String(val).replace(/"/g, '""');
-        return `"${val}"`;
-      }).join(','))
-    ].join('\n');
-    downloadFile('crawl-data.csv', csvContent, 'text/csv');
-  }
+  (async () => {
+    try {
+      const ext = type === 'csv' ? 'csv' : 'json';
+      const filePath = await save({
+        defaultPath: `crawl-data.${ext}`,
+        filters: [
+          { name: ext.toUpperCase(), extensions: [ext] }
+        ]
+      });
+      if (!filePath) return;
+
+      if (type === 'json') {
+        await writeTextFile(filePath, JSON.stringify(crawlResults.value, null, 2));
+        message.success('导出成功');
+        return;
+      }
+
+      const data = crawlResults.value;
+      const headers = Array.from(new Set(data.flatMap(row => Object.keys(row || {}))));
+      const csvContent = [
+        headers.join(','),
+        ...data.map(row => headers.map(k => {
+          let val = row?.[k] ?? '';
+          val = String(val).replace(/"/g, '""');
+          return `"${val}"`;
+        }).join(','))
+      ].join('\n');
+      await writeTextFile(filePath, csvContent);
+      message.success('导出成功');
+    } catch (e) {
+      try {
+        if (type === 'json') {
+          downloadFile('crawl-data.json', JSON.stringify(crawlResults.value, null, 2));
+          message.info('已使用浏览器下载方式导出');
+          return;
+        }
+        const data = crawlResults.value;
+        const headers = Array.from(new Set(data.flatMap(row => Object.keys(row || {}))));
+        const csvContent = [
+          headers.join(','),
+          ...data.map(row => headers.map(k => {
+            let val = row?.[k] ?? '';
+            val = String(val).replace(/"/g, '""');
+            return `"${val}"`;
+          }).join(','))
+        ].join('\n');
+        downloadFile('crawl-data.csv', csvContent, 'text/csv');
+        message.info('已使用浏览器下载方式导出');
+      } catch (_) {
+        message.error('导出失败');
+      }
+    }
+  })();
 };
 
 const startCrawl = async () => {
@@ -1635,7 +1738,7 @@ const fetchPage = async () => {
       throw new Error(`HTTP Error: ${response.status}`);
     }
     
-    const html = await response.text();
+    const html = await decodeHtmlFromResponse(response);
     rawHtml.value = html;
     processedHtml.value = injectInspectorScript(html, targetUrl.value);
     addToHistory(targetUrl.value);

@@ -1040,48 +1040,54 @@
    
           <a-tab-pane key="novel">
             <template #tab>
-              <span class="tab-label">📚 小说</span>
+              <span class="tab-label"><BookOutlined /> 小说</span>
             </template>
 
             <div class="config-content novel-tab-content">
               <!-- Status Overview -->
               <div class="novel-status-card">
-                <a-alert
-                  type="info"
-                  show-icon
-                  class="novel-alert"
-                >
-                  <template #message>
-                    <div class="novel-alert-title">小说爬虫：目录解析 → 后端导出</div>
-                  </template>
-                  <template #description>
-                    <div class="novel-alert-desc">
-                      专为小说抓取优化：解析目录后由后端高效抓取生成文件，速度快且不卡顿
-                    </div>
-                  </template>
-                </a-alert>
+                <div class="novel-hero">
+                  <div class="novel-hero-icon">
+                    <BookOutlined />
+                  </div>
+                  <div class="novel-hero-content">
+                    <h3 class="novel-hero-title">小说爬虫</h3>
+                    <p class="novel-hero-desc">目录解析 → 后端高效抓取 → 一键导出</p>
+                  </div>
+                </div>
                 <div class="novel-status-tags">
-                  <a-tag color="blue" class="status-tag">
-                    <span class="tag-label">待抓取</span>
-                    <span class="tag-value">{{ novelCrawlQueueRemaining }}</span>
-                  </a-tag>
-                  <a-tag color="green" class="status-tag">
-                    <span class="tag-label">已抓取</span>
-                    <span class="tag-value">{{ novelCrawlResultsCount }}</span>
-                  </a-tag>
-                  <a-tag v-if="novelCrawlRunning" color="gold" class="status-tag">
-                    <LoadingOutlined spin style="margin-right: 4px" />
-                    <span>运行中</span>
-                  </a-tag>
+                  <div class="status-tag status-tag-pending">
+                    <div class="status-tag-icon"><ClockCircleOutlined /></div>
+                    <div class="status-tag-info">
+                      <span class="tag-label">待抓取</span>
+                      <span class="tag-value">{{ novelCrawlQueueRemaining }}</span>
+                    </div>
+                  </div>
+                  <div class="status-tag status-tag-success">
+                    <div class="status-tag-icon"><CheckCircleOutlined /></div>
+                    <div class="status-tag-info">
+                      <span class="tag-label">已抓取</span>
+                      <span class="tag-value">{{ novelCrawlResultsCount }}</span>
+                    </div>
+                  </div>
+                  <div v-if="novelCrawlRunning" class="status-tag status-tag-running">
+                    <div class="status-tag-icon"><LoadingOutlined spin /></div>
+                    <div class="status-tag-info">
+                      <span class="tag-label">状态</span>
+                      <span class="tag-value">运行中</span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
               <!-- Directory Parsing Section -->
-              <div class="novel-section">
+              <div class="novel-section novel-section-step1">
                 <div class="novel-section-header">
-                  <span class="section-icon">📖</span>
-                  <span class="section-title">步骤 1：目录解析</span>
-                  <span class="section-subtitle">解析小说章节目录页</span>
+                  <div class="section-step-badge">1</div>
+                  <div class="section-header-content">
+                    <span class="section-title">目录解析</span>
+                    <span class="section-subtitle">解析小说章节目录页</span>
+                  </div>
                 </div>
 
                 <div class="novel-form">
@@ -1224,11 +1230,13 @@
               </div>
 
               <!-- Scraping Rules Section -->
-              <div class="novel-section">
+              <div class="novel-section novel-section-step2">
                 <div class="novel-section-header">
-                  <span class="section-icon">⚙️</span>
-                  <span class="section-title">步骤 2：抓取规则</span>
-                  <span class="section-subtitle">配置章节内容提取规则</span>
+                  <div class="section-step-badge">2</div>
+                  <div class="section-header-content">
+                    <span class="section-title">抓取规则</span>
+                    <span class="section-subtitle">配置章节内容提取规则</span>
+                  </div>
                 </div>
 
                 <div class="novel-form">
@@ -1286,11 +1294,13 @@
               </div>
 
               <!-- Execution Parameters -->
-              <div class="novel-section">
+              <div class="novel-section novel-section-step3">
                 <div class="novel-section-header">
-                  <span class="section-icon">🚀</span>
-                  <span class="section-title">步骤 3：执行参数</span>
-                  <span class="section-subtitle">配置抓取性能参数</span>
+                  <div class="section-step-badge">3</div>
+                  <div class="section-header-content">
+                    <span class="section-title">执行参数</span>
+                    <span class="section-subtitle">配置抓取性能参数</span>
+                  </div>
                 </div>
 
                 <div class="novel-form">
@@ -1364,9 +1374,11 @@
               <!-- Export Section -->
               <div class="novel-section export-section">
                 <div class="novel-section-header">
-                  <span class="section-icon">📥</span>
-                  <span class="section-title">步骤 4：导出小说</span>
-                  <span class="section-subtitle">选择导出格式并开始抓取</span>
+                  <div class="section-step-badge section-step-badge-light">4</div>
+                  <div class="section-header-content">
+                    <span class="section-title">导出小说</span>
+                    <span class="section-subtitle">选择导出格式并开始抓取</span>
+                  </div>
                 </div>
 
                 <div class="novel-form">
@@ -1652,6 +1664,22 @@
     </a-modal>
 
     <a-modal
+      v-model:open="previewModalVisible"
+      title="章节内容预览"
+      width="700px"
+      :footer="null"
+    >
+      <div v-if="previewLoading" class="preview-loading">
+        <a-spin size="large" tip="正在加载内容..." />
+      </div>
+      <div v-else class="chapter-preview-content">
+        <h2 class="preview-title">{{ previewResult.title }}</h2>
+        <div class="preview-meta">{{ previewResult.url }}</div>
+        <div class="preview-body">{{ previewResult.content }}</div>
+      </div>
+    </a-modal>
+
+    <a-modal
       v-model:open="helpModalVisible"
       title="使用说明"
       width="920px"
@@ -1770,6 +1798,7 @@ import { useScraperCodegen } from "../composables/scraper/useScraperCodegen";
 import { useScraperConfigStorage } from "../composables/scraper/useScraperConfigStorage";
 import { useScraperApiMode } from "../composables/scraper/useScraperApiMode";
 import { useScraperNovelDirectory } from "../composables/scraper/useScraperNovelDirectory";
+import { useScraperNovelActions } from "../composables/scraper/useScraperNovelActions";
 import {
   buildHeadersObject,
   downloadFile,
@@ -1810,6 +1839,9 @@ import {
   FilterOutlined,
   CleanOutlined,
   CloseCircleOutlined,
+  PauseCircleOutlined,
+  ClockCircleOutlined,
+  CheckCircleOutlined,
 } from "@ant-design/icons-vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -2010,7 +2042,6 @@ const triggerFieldFlash = (index) => {
 };
 
 const {
-  previewResult,
   hasPreviewData,
   previewCountText,
   previewDataJson,
@@ -2275,16 +2306,35 @@ const {
   messageApi: message,
 });
 
+const {
+  previewModalVisible,
+  previewLoading,
+  previewResult,
+  previewChapter,
+  rangeStart,
+  rangeEnd,
+  getFilteredChapters
+} = useScraperNovelActions({
+  invoke,
+  messageApi: message,
+  buildRequestHeadersObject,
+  requestTimeout,
+  proxyUrl,
+  acceptInvalidCerts
+});
+
 const exportNovelCrawlerTxt = async () => {
   try {
     await ensureNovelCrawlListeners();
-    const urls = (Array.isArray(novelChapters.value) ? novelChapters.value : [])
+    const chaptersToExport = getFilteredChapters(novelChapters.value);
+    
+    const urls = (Array.isArray(chaptersToExport) ? chaptersToExport : [])
       .map((x) => x?.url)
       .filter(Boolean)
       .map((u) => normalizedUrl(u))
       .filter(Boolean);
     if (!urls.length) {
-      message.warning("没有可导出的章节链接（请先解析目录）");
+      message.warning("没有可导出的章节链接（请先解析目录或检查范围设置）");
       return;
     }
 
@@ -2297,7 +2347,7 @@ const exportNovelCrawlerTxt = async () => {
     novelCrawlRunning.value = true;
     novelCrawlProcessed.value = 0;
     novelCrawlQueueRemaining.value = urls.length;
-    pushNovelCrawlLog("开始后端导出 TXT");
+    pushNovelCrawlLog(`开始后端导出 TXT (共 ${urls.length} 章)`);
 
     const runId = await invoke("novel_crawl_export", {
       req: {
@@ -2339,13 +2389,15 @@ const exportNovelCrawlerTxt = async () => {
 const exportNovelCrawlerJson = async () => {
   try {
     await ensureNovelCrawlListeners();
-    const urls = (Array.isArray(novelChapters.value) ? novelChapters.value : [])
+    const chaptersToExport = getFilteredChapters(novelChapters.value);
+
+    const urls = (Array.isArray(chaptersToExport) ? chaptersToExport : [])
       .map((x) => x?.url)
       .filter(Boolean)
       .map((u) => normalizedUrl(u))
       .filter(Boolean);
     if (!urls.length) {
-      message.warning("没有可导出的章节链接（请先解析目录）");
+      message.warning("没有可导出的章节链接（请先解析目录或检查范围设置）");
       return;
     }
 
@@ -2358,7 +2410,7 @@ const exportNovelCrawlerJson = async () => {
     novelCrawlRunning.value = true;
     novelCrawlProcessed.value = 0;
     novelCrawlQueueRemaining.value = urls.length;
-    pushNovelCrawlLog("开始后端导出 JSON");
+    pushNovelCrawlLog(`开始后端导出 JSON (共 ${urls.length} 章)`);
 
     const runId = await invoke("novel_crawl_export", {
       req: {
@@ -4024,74 +4076,182 @@ const highlightFieldSelector = (index) => {
 /* === Novel Tab Styles === */
 .novel-tab-content {
   padding: 20px !important;
-  background: #f8fafc !important;
+  background: linear-gradient(135deg, #fef7ed 0%, #fdf4e8 50%, #fef9f3 100%) !important;
   gap: 20px;
+  min-height: 100%;
 }
 
 .novel-status-card {
-  background: white;
-  border-radius: 12px;
-  padding: 20px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-  border: 1px solid #e5e7eb;
+  background: linear-gradient(135deg, #92400e 0%, #b45309 50%, #d97706 100%);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 8px 32px rgba(180, 83, 9, 0.25), 0 4px 12px rgba(0, 0, 0, 0.1);
+  border: none;
+  color: white;
+  position: relative;
+  overflow: hidden;
 }
 
-.novel-alert {
-  margin-bottom: 16px;
+.novel-status-card::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  right: -20%;
+  width: 300px;
+  height: 300px;
+  background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+  pointer-events: none;
 }
 
-.novel-alert-title {
+.novel-hero {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.novel-hero-icon {
+  width: 56px;
+  height: 56px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.novel-hero-content {
+  flex: 1;
+}
+
+.novel-hero-title {
+  margin: 0 0 4px 0;
+  font-size: 22px;
   font-weight: 700;
-  font-size: 15px;
-  color: #1f2937;
+  color: white;
+  letter-spacing: -0.5px;
 }
 
-.novel-alert-desc {
-  margin-top: 4px;
-  color: #6b7280;
-  font-size: 13px;
+.novel-hero-desc {
+  margin: 0;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.85);
+  font-weight: 500;
 }
 
 .novel-status-tags {
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: stretch;
 }
 
 .status-tag {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 14px;
+  gap: 12px;
+  padding: 12px 18px;
   font-size: 14px;
-  border-radius: 6px;
+  border-radius: 12px;
   font-weight: 500;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: all 0.3s ease;
+  min-width: 120px;
+}
+
+.status-tag:hover {
+  background: rgba(255, 255, 255, 0.25);
+  transform: translateY(-2px);
+}
+
+.status-tag-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+}
+
+.status-tag-pending .status-tag-icon {
+  background: rgba(251, 191, 36, 0.3);
+  color: #fef3c7;
+}
+
+.status-tag-success .status-tag-icon {
+  background: rgba(34, 197, 94, 0.3);
+  color: #bbf7d0;
+}
+
+.status-tag-running .status-tag-icon {
+  background: rgba(59, 130, 246, 0.3);
+  color: #bfdbfe;
+}
+
+.status-tag-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .tag-label {
-  color: rgba(0, 0, 0, 0.5);
-  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .tag-value {
   font-weight: 700;
-  font-size: 16px;
+  font-size: 18px;
+  color: white;
 }
 
 .novel-section {
   background: white;
-  border-radius: 12px;
+  border-radius: 16px;
   padding: 24px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-  border: 1px solid #e5e7eb;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.06);
+  border: 1px solid #f3e8d8;
   margin-bottom: 20px;
+  transition: all 0.3s ease;
+}
+
+.novel-section:hover {
+  box-shadow: 0 4px 16px rgba(180, 83, 9, 0.08), 0 2px 4px rgba(0, 0, 0, 0.06);
+  border-color: #e8d5c4;
+}
+
+.novel-section-step1 {
+  border-left: 4px solid #f59e0b;
+}
+
+.novel-section-step2 {
+  border-left: 4px solid #d97706;
+}
+
+.novel-section-step3 {
+  border-left: 4px solid #b45309;
 }
 
 .novel-section.export-section {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #92400e 0%, #b45309 50%, #d97706 100%);
   color: white;
   border: none;
+  border-left: none;
+  box-shadow: 0 8px 32px rgba(180, 83, 9, 0.3), 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.export-section:hover {
+  box-shadow: 0 12px 40px rgba(180, 83, 9, 0.35), 0 6px 16px rgba(0, 0, 0, 0.2);
+  transform: translateY(-2px);
 }
 
 .export-section .novel-section-header .section-title,
@@ -4103,31 +4263,54 @@ const highlightFieldSelector = (index) => {
 .novel-section-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 20px;
+  gap: 16px;
+  margin-bottom: 24px;
   padding-bottom: 16px;
-  border-bottom: 2px solid #f3f4f6;
+  border-bottom: 2px solid #fef3c7;
 }
 
 .export-section .novel-section-header {
   border-bottom-color: rgba(255, 255, 255, 0.2);
 }
 
-.section-icon {
-  font-size: 24px;
-  line-height: 1;
+.section-step-badge {
+  width: 36px;
+  height: 36px;
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: white;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.35);
+  flex-shrink: 0;
+}
+
+.section-step-badge-light {
+  background: rgba(255, 255, 255, 0.25);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.section-header-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
 }
 
 .section-title {
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 700;
-  color: #1f2937;
+  color: #78350f;
+  letter-spacing: -0.3px;
 }
 
 .section-subtitle {
   font-size: 13px;
-  color: #9ca3af;
-  margin-left: auto;
+  color: #a16207;
+  font-weight: 500;
 }
 
 .novel-form {
@@ -4178,8 +4361,8 @@ const highlightFieldSelector = (index) => {
 .novel-input:focus,
 .novel-select:focus,
 .novel-textarea:focus {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15);
 }
 
 .filter-row {
@@ -4213,23 +4396,29 @@ const highlightFieldSelector = (index) => {
 
 .primary-action-btn {
   font-weight: 600;
-  height: 42px;
+  height: 44px;
   padding: 0 28px;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
+  border-radius: 10px;
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%) !important;
+  border: none !important;
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.35);
   transition: all 0.3s;
 }
 
 .primary-action-btn:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(59, 130, 246, 0.35);
+  box-shadow: 0 6px 20px rgba(245, 158, 11, 0.45);
+  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%) !important;
 }
 
 .result-tag {
   font-size: 14px;
-  padding: 6px 14px;
-  border-radius: 6px;
+  padding: 8px 16px;
+  border-radius: 8px;
   font-weight: 600;
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%) !important;
+  color: #92400e !important;
+  border: 1px solid #fcd34d !important;
 }
 
 .chapters-list {
@@ -4283,12 +4472,12 @@ const highlightFieldSelector = (index) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
   color: white;
   font-weight: 700;
   font-size: 13px;
   border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
+  box-shadow: 0 2px 4px rgba(245, 158, 11, 0.35);
 }
 
 .chapter-info {
@@ -4402,25 +4591,26 @@ const highlightFieldSelector = (index) => {
 
 .export-txt {
   background: white;
-  color: #667eea;
+  color: #92400e;
   border: 2px solid white;
   box-shadow: 0 4px 12px rgba(255, 255, 255, 0.3);
 }
 
 .export-txt:hover {
   background: rgba(255, 255, 255, 0.95);
-  box-shadow: 0 6px 16px rgba(255, 255, 255, 0.4);
+  box-shadow: 0 8px 20px rgba(255, 255, 255, 0.45);
+  color: #78350f;
 }
 
 .export-json {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.18);
   color: white;
-  border: 2px solid rgba(255, 255, 255, 0.3);
+  border: 2px solid rgba(255, 255, 255, 0.35);
 }
 
 .export-json:hover {
-  background: rgba(255, 255, 255, 0.25);
-  border-color: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.28);
+  border-color: rgba(255, 255, 255, 0.55);
 }
 
 .novel-logs-collapse {
@@ -4447,12 +4637,12 @@ const highlightFieldSelector = (index) => {
 .subsection-title {
   font-size: 13px;
   font-weight: 600;
-  color: #374151;
+  color: #78350f;
   margin-bottom: 10px;
-  padding: 6px 12px;
-  background: #f9fafb;
-  border-radius: 6px;
-  border-left: 3px solid #3b82f6;
+  padding: 8px 14px;
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  border-radius: 8px;
+  border-left: 3px solid #f59e0b;
 }
 
 .failures-list {

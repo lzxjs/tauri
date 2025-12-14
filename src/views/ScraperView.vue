@@ -37,6 +37,7 @@
             :loading="loading"
             :disabled="!canFetch"
             @click="fetchPage"
+            title="Ctrl+Enter 快速加载"
           >
             <template #icon><GlobalOutlined /></template>
             加载
@@ -60,12 +61,12 @@
         <div class="divider-vertical"></div>
 
         <!-- Quick Actions -->
-        <a-tooltip title="粘贴网址">
+        <a-tooltip title="粘贴网址 (Ctrl+V)">
           <a-button type="text" class="icon-btn" @click="pasteUrl">
             <CopyOutlined />
           </a-button>
         </a-tooltip>
-        <a-tooltip title="清空输入">
+        <a-tooltip title="清空输入 (Ctrl+Delete)">
           <a-button
             type="text"
             class="icon-btn"
@@ -75,7 +76,7 @@
             <ClearOutlined />
           </a-button>
         </a-tooltip>
-        <a-tooltip title="在浏览器打开">
+        <a-tooltip title="在浏览器打开 (Ctrl+B)">
           <a-button
             type="text"
             class="icon-btn"
@@ -85,7 +86,7 @@
             <GlobalOutlined />
           </a-button>
         </a-tooltip>
-        <a-tooltip title="请求设置">
+        <a-tooltip title="请求设置 (Ctrl+,)">
           <a-button
             type="text"
             class="icon-btn"
@@ -98,14 +99,14 @@
         <div class="divider-vertical"></div>
 
         <!-- Major Actions -->
-        <a-tooltip title="生成代码">
+        <a-tooltip title="生成代码 (Ctrl+K)">
           <a-button type="text" class="icon-btn" @click="showCodeModal">
             <CodeOutlined />
           </a-button>
         </a-tooltip>
 
         <a-dropdown :trigger="['click']">
-          <a-tooltip title="规则管理">
+          <a-tooltip title="规则管理 (Ctrl+S 保存)">
             <a-button type="text" class="icon-btn">
               <FolderOpenOutlined />
             </a-button>
@@ -185,10 +186,19 @@
                 <span></span><span></span><span></span>
               </div>
               <div class="fake-url">
-                <span v-if="targetUrl">{{ targetUrl }}</span>
+                <span v-if="loading" style="color: #3b82f6;">
+                  <LoadingOutlined style="margin-right: 8px" />
+                  正在加载...
+                </span>
+                <span v-else-if="targetUrl">{{ targetUrl }}</span>
                 <span v-else style="color: #9ca3af; font-style: italic">about:blank</span>
               </div>
-              <ReloadOutlined class="browser-reload-icon" @click="fetchPage" />
+              <ReloadOutlined
+                class="browser-reload-icon"
+                :class="{ 'loading-spin': loading }"
+                @click="fetchPage"
+                :title="loading ? '加载中...' : '刷新页面 (Ctrl+R)'"
+              />
             </div>
 
             <div class="iframe-container">
@@ -256,6 +266,14 @@
                           v-if="processedHtml"
                           class="field-diag-tag"
                           :color="fieldDiagnosticColor(index)"
+                          style="cursor: help"
+                          :title="
+                            fieldDiagnosticText(index) === '✓'
+                              ? '选择器有效'
+                              : fieldDiagnosticText(index) === '✗'
+                              ? '选择器无效或无匹配'
+                              : '待验证'
+                          "
                           >{{ fieldDiagnosticText(index) }}</a-tag
                         >
                       </div>
@@ -475,6 +493,7 @@
                     size="small"
                     @click="refreshPreview"
                     :loading="loading"
+                    title="刷新数据预览"
                     ><ReloadOutlined
                   /></a-button>
                 </div>
@@ -1021,232 +1040,312 @@
    
           <a-tab-pane key="novel">
             <template #tab>
-              <span class="tab-label"> 小说 </span>
+              <span class="tab-label">📚 小说</span>
             </template>
 
-            <div class="config-content task-tab-content">
-              <div class="task-section">
+            <div class="config-content novel-tab-content">
+              <!-- Status Overview -->
+              <div class="novel-status-card">
                 <a-alert
                   type="info"
                   show-icon
-                  message="小说爬虫：目录解析 -> 导出"
-                  description="这个页面专注抓小说：解析目录后直接导出（title/content/url），由后端抓取生成文件，速度快且不卡顿。"
-                />
-                <div class="task-actions-row" style="margin-top: 10px">
-                  <a-tag color="blue"
-                    >待抓取: {{ novelCrawlQueueRemaining }}</a-tag
-                  >
-                  <a-tag color="green"
-                    >已抓取: {{ novelCrawlResultsCount }}</a-tag
-                  >
-                  <a-tag v-if="novelCrawlRunning" color="gold">运行中</a-tag>
+                  class="novel-alert"
+                >
+                  <template #message>
+                    <div class="novel-alert-title">小说爬虫：目录解析 → 后端导出</div>
+                  </template>
+                  <template #description>
+                    <div class="novel-alert-desc">
+                      专为小说抓取优化：解析目录后由后端高效抓取生成文件，速度快且不卡顿
+                    </div>
+                  </template>
+                </a-alert>
+                <div class="novel-status-tags">
+                  <a-tag color="blue" class="status-tag">
+                    <span class="tag-label">待抓取</span>
+                    <span class="tag-value">{{ novelCrawlQueueRemaining }}</span>
+                  </a-tag>
+                  <a-tag color="green" class="status-tag">
+                    <span class="tag-label">已抓取</span>
+                    <span class="tag-value">{{ novelCrawlResultsCount }}</span>
+                  </a-tag>
+                  <a-tag v-if="novelCrawlRunning" color="gold" class="status-tag">
+                    <LoadingOutlined spin style="margin-right: 4px" />
+                    <span>运行中</span>
+                  </a-tag>
                 </div>
               </div>
 
-              <div class="task-section">
-                <div class="task-section-title">目录解析（小说章节）</div>
-                <div style="display: flex; flex-direction: column; gap: 10px">
-                  <div style="display: flex; gap: 8px; align-items: center">
-                    <a-input
-                      v-model:value="directoryUrl"
-                      placeholder="目录页 URL (https://...)"
-                    />
-                    <a-button
-                      size="small"
-                      @click="directoryUrl = targetUrl"
-                      :disabled="!targetUrl"
-                    >
-                      使用当前 URL
-                    </a-button>
-                  </div>
-                  <div style="display: flex; gap: 8px; align-items: center">
-                    <a-input
-                      v-model:value="novelLinkSelector"
-                      placeholder="章节链接选择器 (例如 .chapter-list a)"
-                    />
-                    <a-select
-                      v-model:value="novelLinkAttr"
-                      style="width: 140px"
-                    >
-                      <a-select-option value="href">href</a-select-option>
-                      <a-select-option value="data-href"
-                        >data-href</a-select-option
+              <!-- Directory Parsing Section -->
+              <div class="novel-section">
+                <div class="novel-section-header">
+                  <span class="section-icon">📖</span>
+                  <span class="section-title">步骤 1：目录解析</span>
+                  <span class="section-subtitle">解析小说章节目录页</span>
+                </div>
+
+                <div class="novel-form">
+                  <!-- URL Input -->
+                  <div class="form-group">
+                    <label class="form-label">
+                      <LinkOutlined style="margin-right: 6px" />
+                      目录页 URL
+                    </label>
+                    <div class="input-with-button">
+                      <a-input
+                        v-model:value="directoryUrl"
+                        placeholder="输入小说目录页 URL (https://...)"
+                        size="large"
+                        class="novel-input"
                       >
-                      <a-select-option value="text">text</a-select-option>
-                    </a-select>
-                    <a-input-number
-                      v-model:value="novelMaxItems"
-                      :min="1"
-                      :max="5000"
-                      style="width: 140px"
-                    />
-                  </div>
-                  <div style="display: flex; gap: 8px; align-items: center">
-                    <a-switch v-model:checked="novelSameDomainOnly" />
-                    <span style="color: #64748b">仅同域</span>
-                    <a-input
-                      v-model:value="novelIncludePattern"
-                      placeholder="包含正则(可选)"
-                    />
-                    <a-input
-                      v-model:value="novelExcludePattern"
-                      placeholder="排除正则(可选)"
-                    />
+                        <template #prefix>
+                          <GlobalOutlined style="color: #9ca3af" />
+                        </template>
+                      </a-input>
+                      <a-button
+                        @click="directoryUrl = targetUrl"
+                        :disabled="!targetUrl"
+                        title="使用当前页面的 URL"
+                      >
+                        <CopyOutlined /> 使用当前
+                      </a-button>
+                    </div>
                   </div>
 
-                  <div style="display: flex; gap: 8px">
+                  <!-- Selector & Settings -->
+                  <div class="form-row">
+                    <div class="form-group" style="flex: 2">
+                      <label class="form-label">
+                        <AimOutlined style="margin-right: 6px" />
+                        章节链接选择器
+                      </label>
+                      <a-input
+                        v-model:value="novelLinkSelector"
+                        placeholder="CSS 选择器，例如：.chapter-list a"
+                        class="novel-input"
+                      />
+                    </div>
+                    <div class="form-group" style="flex: 1">
+                      <label class="form-label">链接属性</label>
+                      <a-select v-model:value="novelLinkAttr" class="novel-select">
+                        <a-select-option value="href">href</a-select-option>
+                        <a-select-option value="data-href">data-href</a-select-option>
+                        <a-select-option value="text">text</a-select-option>
+                      </a-select>
+                    </div>
+                    <div class="form-group" style="flex: 1">
+                      <label class="form-label">最大数量</label>
+                      <a-input-number
+                        v-model:value="novelMaxItems"
+                        :min="1"
+                        :max="5000"
+                        style="width: 100%"
+                        placeholder="5000"
+                      />
+                    </div>
+                  </div>
+
+                  <!-- Filters -->
+                  <div class="form-group">
+                    <label class="form-label">
+                      <FilterOutlined style="margin-right: 6px" />
+                      过滤规则（可选）
+                    </label>
+                    <div class="filter-row">
+                      <div class="filter-item">
+                        <a-switch v-model:checked="novelSameDomainOnly" />
+                        <span class="filter-label">仅同域名</span>
+                      </div>
+                      <a-input
+                        v-model:value="novelIncludePattern"
+                        placeholder="包含正则（留空不过滤）"
+                        style="flex: 1"
+                      />
+                      <a-input
+                        v-model:value="novelExcludePattern"
+                        placeholder="排除正则（留空不过滤）"
+                        style="flex: 1"
+                      />
+                    </div>
+                  </div>
+
+                  <!-- Parse Button -->
+                  <div class="action-row">
                     <a-button
                       type="primary"
+                      size="large"
                       :loading="novelParsing"
                       :disabled="!novelCanParse"
                       @click="parseNovelDirectory"
+                      class="primary-action-btn"
                     >
-                      解析目录
+                      <template #icon><SearchOutlined /></template>
+                      解析章节目录
                     </a-button>
-                    <a-tag color="blue">{{ novelChapters.length }} 条</a-tag>
+                    <a-tag v-if="novelChapters.length > 0" color="blue" class="result-tag">
+                      已找到 {{ novelChapters.length }} 个章节
+                    </a-tag>
                   </div>
 
-                  <div
+                  <!-- Error Message -->
+                  <a-alert
                     v-if="novelParseError"
-                    style="color: #ef4444; white-space: pre-wrap"
-                  >
-                    {{ novelParseError }}
-                  </div>
-                  <a-list
-                    size="small"
-                    bordered
-                    :data-source="novelChapters.slice(0, 50)"
-                    :locale="{ emptyText: '暂无解析结果（最多展示前 50 条）' }"
-                  >
-                    <template #renderItem="{ item }">
-                      <a-list-item>
-                        <div
-                          style="
-                            display: flex;
-                            flex-direction: column;
-                            gap: 2px;
-                            width: 100%;
-                          "
-                        >
-                          <div style="font-weight: 600">
-                            {{ item.title || "—" }}
-                          </div>
-                          <div
-                            style="
-                              color: #64748b;
-                              font-size: 12px;
-                              word-break: break-all;
-                            "
-                          >
-                            {{ item.url }}
-                          </div>
-                        </div>
-                      </a-list-item>
-                    </template>
-                  </a-list>
-                </div>
-              </div>
-
-              <div class="task-section">
-                <div class="task-section-title">抓取规则（章节页）</div>
-                <div style="display: flex; flex-direction: column; gap: 10px">
-                  <div style="display: flex; gap: 8px; align-items: center">
-                    <div style="width: 110px; color: #64748b">标题选择器</div>
-                    <a-input
-                      v-model:value="novelTitleSelector"
-                      placeholder="例如 h1"
-                    />
-                  </div>
-                  <div style="display: flex; gap: 8px; align-items: center">
-                    <div style="width: 110px; color: #64748b">正文选择器</div>
-                    <a-input
-                      v-model:value="novelContentSelector"
-                      placeholder="例如 #content"
-                    />
-                  </div>
-
-                  <div
-                    style="
-                      display: flex;
-                      gap: 12px;
-                      align-items: center;
-                      flex-wrap: wrap;
-                    "
-                  >
-                    <a-switch v-model:checked="novelExportIncludeUrlLine" />
-                    <span style="color: #64748b">导出附带 URL</span>
-                  </div>
-
-                  <div
-                    style="
-                      display: flex;
-                      gap: 12px;
-                      align-items: center;
-                      flex-wrap: wrap;
-                    "
-                  >
-                    <a-switch v-model:checked="novelCleanEnabled" />
-                    <span style="color: #64748b">启用自定义清洗正则</span>
-                  </div>
-
-                  <a-textarea
-                    v-model:value="novelCleanRegexText"
-                    :disabled="!novelCleanEnabled"
-                    placeholder="每行一个正则（匹配到的内容会被删除），例如：\napp2\\(\\);\nread2\\(\\);\nchaptererror\\(\\);"
-                    :auto-size="{ minRows: 3, maxRows: 8 }"
+                    type="error"
+                    :message="novelParseError"
+                    show-icon
+                    closable
+                    style="margin-top: 12px"
                   />
+
+                  <!-- Chapters List -->
+                  <div v-if="novelChapters.length > 0" class="chapters-list">
+                    <div class="list-header">
+                      <span class="list-title">章节列表预览</span>
+                      <span class="list-info">（最多显示前 50 条）</span>
+                    </div>
+                    <a-list
+                      size="small"
+                      bordered
+                      :data-source="novelChapters.slice(0, 50)"
+                      class="novel-chapters-list"
+                    >
+                      <template #renderItem="{ item, index }">
+                        <a-list-item class="chapter-item">
+                          <div class="chapter-index">{{ index + 1 }}</div>
+                          <div class="chapter-info">
+                            <div class="chapter-title">{{ item.title || "—" }}</div>
+                            <div class="chapter-url">{{ item.url }}</div>
+                          </div>
+                        </a-list-item>
+                      </template>
+                    </a-list>
+                  </div>
                 </div>
               </div>
 
-              <div class="task-section">
-                <div class="task-section-title">执行</div>
-                <div style="display: flex; flex-direction: column; gap: 10px">
-                  <div class="task-grid">
-                    <div class="task-grid-item">
-                      <div class="task-label">并发</div>
+              <!-- Scraping Rules Section -->
+              <div class="novel-section">
+                <div class="novel-section-header">
+                  <span class="section-icon">⚙️</span>
+                  <span class="section-title">步骤 2：抓取规则</span>
+                  <span class="section-subtitle">配置章节内容提取规则</span>
+                </div>
+
+                <div class="novel-form">
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label class="form-label">标题选择器</label>
+                      <a-input
+                        v-model:value="novelTitleSelector"
+                        placeholder="例如：h1, .title, #chapter-title"
+                        class="novel-input"
+                      />
+                    </div>
+                    <div class="form-group">
+                      <label class="form-label">正文选择器</label>
+                      <a-input
+                        v-model:value="novelContentSelector"
+                        placeholder="例如：#content, .article-content"
+                        class="novel-input"
+                      />
+                    </div>
+                  </div>
+
+                  <!-- Options -->
+                  <div class="options-grid">
+                    <div class="option-item">
+                      <a-switch v-model:checked="novelExportIncludeUrlLine" />
+                      <div class="option-content">
+                        <div class="option-label">导出附带 URL</div>
+                        <div class="option-desc">在每章开头包含来源链接</div>
+                      </div>
+                    </div>
+                    <div class="option-item">
+                      <a-switch v-model:checked="novelCleanEnabled" />
+                      <div class="option-content">
+                        <div class="option-label">启用内容清洗</div>
+                        <div class="option-desc">使用正则表达式清理广告</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Clean Regex -->
+                  <div v-if="novelCleanEnabled" class="form-group">
+                    <label class="form-label">
+                      <CleanOutlined style="margin-right: 6px" />
+                      清洗正则表达式
+                    </label>
+                    <a-textarea
+                      v-model:value="novelCleanRegexText"
+                      placeholder="每行一个正则表达式（匹配到的内容会被删除）&#10;例如：&#10;app2\(\);&#10;read2\(\);&#10;chaptererror\(\);"
+                      :auto-size="{ minRows: 3, maxRows: 6 }"
+                      class="novel-textarea"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <!-- Execution Parameters -->
+              <div class="novel-section">
+                <div class="novel-section-header">
+                  <span class="section-icon">🚀</span>
+                  <span class="section-title">步骤 3：执行参数</span>
+                  <span class="section-subtitle">配置抓取性能参数</span>
+                </div>
+
+                <div class="novel-form">
+                  <div class="params-grid">
+                    <div class="param-item">
+                      <label class="param-label">并发数</label>
                       <a-input-number
                         v-model:value="novelCrawlConcurrency"
                         :min="1"
                         :max="8"
                         style="width: 100%"
                       />
+                      <span class="param-hint">同时抓取的章节数</span>
                     </div>
-                    <div class="task-grid-item">
-                      <div class="task-label">间隔(ms)</div>
+                    <div class="param-item">
+                      <label class="param-label">间隔时间</label>
                       <a-input-number
                         v-model:value="novelCrawlDelayMs"
                         :min="0"
                         :max="30000"
                         style="width: 100%"
+                        :formatter="value => `${value} ms`"
+                        :parser="value => value.replace(' ms', '')"
                       />
+                      <span class="param-hint">请求间隔（毫秒）</span>
                     </div>
-                    <div class="task-grid-item">
-                      <div class="task-label">重试</div>
+                    <div class="param-item">
+                      <label class="param-label">重试次数</label>
                       <a-input-number
                         v-model:value="novelCrawlRetry"
                         :min="0"
                         :max="10"
                         style="width: 100%"
                       />
+                      <span class="param-hint">失败后重试</span>
                     </div>
-                    <div class="task-grid-item">
-                      <div class="task-label">最大章节</div>
+                    <div class="param-item">
+                      <label class="param-label">最大章节数</label>
                       <a-input-number
                         v-model:value="novelCrawlMaxPages"
                         :min="1"
                         :max="20000"
                         style="width: 100%"
                       />
+                      <span class="param-hint">抓取上限</span>
                     </div>
                   </div>
 
-                  <div class="task-actions-row">
+                  <div class="action-row">
                     <a-button
                       danger
                       :disabled="!novelCrawlRunning"
                       @click="cancelNovelExport"
                     >
-                      <StopOutlined /> 停止
+                      <StopOutlined /> 停止任务
                     </a-button>
                     <a-button
                       :disabled="novelCrawlRunning"
@@ -1262,142 +1361,144 @@
                 </div>
               </div>
 
-              <div class="task-section">
-                <div class="task-section-title">导出</div>
-                <div style="display: flex; flex-direction: column; gap: 10px">
-                  <div
-                    style="
-                      display: flex;
-                      gap: 8px;
-                      align-items: center;
-                      flex-wrap: wrap;
-                    "
-                  >
-                    <div style="width: 120px; color: #64748b">JSON 字段名</div>
-                    <a-input
-                      v-model:value="novelJsonKeyTitle"
-                      style="width: 140px"
-                      placeholder="title 字段"
-                    />
-                    <a-input
-                      v-model:value="novelJsonKeyContent"
-                      style="width: 140px"
-                      placeholder="content 字段"
-                    />
-                    <a-input
-                      v-model:value="novelJsonKeyUrl"
-                      style="width: 140px"
-                      placeholder="url 字段"
-                    />
+              <!-- Export Section -->
+              <div class="novel-section export-section">
+                <div class="novel-section-header">
+                  <span class="section-icon">📥</span>
+                  <span class="section-title">步骤 4：导出小说</span>
+                  <span class="section-subtitle">选择导出格式并开始抓取</span>
+                </div>
+
+                <div class="novel-form">
+                  <!-- JSON Field Names -->
+                  <div class="form-group">
+                    <label class="form-label">
+                      <CodeOutlined style="margin-right: 6px" />
+                      JSON 字段映射（仅用于 JSON 导出）
+                    </label>
+                    <div class="json-fields-row">
+                      <a-input
+                        v-model:value="novelJsonKeyTitle"
+                        placeholder="title"
+                        addon-before="标题"
+                      />
+                      <a-input
+                        v-model:value="novelJsonKeyContent"
+                        placeholder="content"
+                        addon-before="内容"
+                      />
+                      <a-input
+                        v-model:value="novelJsonKeyUrl"
+                        placeholder="url"
+                        addon-before="链接"
+                      />
+                    </div>
                   </div>
-                  <div style="display: flex; gap: 8px">
+
+                  <!-- Export Buttons -->
+                  <div class="export-actions">
                     <a-button
                       type="primary"
-                      :disabled="
-                        novelChapters.length === 0 || novelCrawlRunning
-                      "
+                      size="large"
+                      :disabled="novelChapters.length === 0 || novelCrawlRunning"
                       @click="exportNovelCrawlerTxt"
+                      class="export-btn export-txt"
                     >
-                      导出 TXT
+                      <template #icon><FileTextOutlined /></template>
+                      导出为 TXT 文件
                     </a-button>
                     <a-button
-                      :disabled="
-                        novelChapters.length === 0 || novelCrawlRunning
-                      "
+                      size="large"
+                      :disabled="novelChapters.length === 0 || novelCrawlRunning"
                       @click="exportNovelCrawlerJson"
+                      class="export-btn export-json"
                     >
-                      导出 JSON
+                      <template #icon><CodeOutlined /></template>
+                      导出为 JSON 文件
                     </a-button>
-                    <a-tag color="blue"
-                      >已抓取章节: {{ novelCrawlResultsCount }}</a-tag
-                    >
                   </div>
                 </div>
               </div>
 
-              <div class="task-section">
-                <div class="task-section-title">失败与日志</div>
-                <div class="task-actions-row" style="margin-bottom: 10px">
-                  <a-button
-                    size="small"
-                    :disabled="novelCrawlFailures.length === 0"
-                    @click="
-                      downloadFile(
-                        'novel-failures.json',
-                        JSON.stringify(novelCrawlFailures, null, 2)
-                      )
-                    "
-                  >
-                    <DownloadOutlined /> 导出失败
-                  </a-button>
-                  <a-button
-                    size="small"
-                    danger
-                    :disabled="novelCrawlFailures.length === 0"
-                    @click="novelCrawlFailures = []"
-                  >
-                    <DeleteOutlined /> 清空失败
-                  </a-button>
-                  <a-button
-                    size="small"
-                    danger
-                    :disabled="novelCrawlLogs.length === 0"
-                    @click="
-                      novelCrawlLogs = [];
-                      novelCrawlLogsText = '';
-                    "
-                  >
-                    <DeleteOutlined /> 清空日志
-                  </a-button>
-                  <a-tag v-if="novelCrawlFailures.length" color="red"
-                    >失败: {{ novelCrawlFailures.length }}</a-tag
-                  >
-                </div>
+              <!-- Logs & Failures Section -->
+              <a-collapse v-if="novelCrawlLogs.length > 0 || novelCrawlFailures.length > 0" class="novel-logs-collapse">
+                <a-collapse-panel key="logs" header="运行日志与错误记录">
+                  <div class="logs-toolbar">
+                    <a-space>
+                      <a-button
+                        size="small"
+                        :disabled="novelCrawlFailures.length === 0"
+                        @click="
+                          downloadFile(
+                            'novel-failures.json',
+                            JSON.stringify(novelCrawlFailures, null, 2)
+                          )
+                        "
+                      >
+                        <DownloadOutlined /> 导出失败记录
+                      </a-button>
+                      <a-button
+                        size="small"
+                        danger
+                        :disabled="novelCrawlFailures.length === 0"
+                        @click="novelCrawlFailures = []"
+                      >
+                        <DeleteOutlined /> 清空失败
+                      </a-button>
+                      <a-button
+                        size="small"
+                        danger
+                        :disabled="novelCrawlLogs.length === 0"
+                        @click="
+                          novelCrawlLogs = [];
+                          novelCrawlLogsText = '';
+                        "
+                      >
+                        <DeleteOutlined /> 清空日志
+                      </a-button>
+                    </a-space>
+                    <a-tag v-if="novelCrawlFailures.length" color="red">
+                      失败: {{ novelCrawlFailures.length }}
+                    </a-tag>
+                  </div>
 
-                <div
-                  v-if="novelCrawlFailures.length"
-                  style="margin-bottom: 10px"
-                >
-                  <a-list
-                    size="small"
-                    bordered
-                    :data-source="novelCrawlFailures.slice(0, 20)"
-                    :locale="{ emptyText: '暂无失败记录' }"
-                  >
-                    <template #renderItem="{ item }">
-                      <a-list-item>
-                        <div
-                          style="
-                            display: flex;
-                            flex-direction: column;
-                            gap: 2px;
-                            width: 100%;
-                          "
-                        >
-                          <div style="font-weight: 600">
-                            {{ item.time }} - {{ item.error }}
+                  <!-- Failures List -->
+                  <div v-if="novelCrawlFailures.length" class="failures-section">
+                    <div class="subsection-title">失败记录（最多显示 20 条）</div>
+                    <a-list
+                      size="small"
+                      bordered
+                      :data-source="novelCrawlFailures.slice(0, 20)"
+                      class="failures-list"
+                    >
+                      <template #renderItem="{ item }">
+                        <a-list-item class="failure-item">
+                          <div class="failure-info">
+                            <div class="failure-header">
+                              <CloseCircleOutlined style="color: #ef4444; margin-right: 6px" />
+                              <span class="failure-time">{{ item.time }}</span>
+                              <span class="failure-error">{{ item.error }}</span>
+                            </div>
+                            <div class="failure-url">{{ item.url }}</div>
                           </div>
-                          <div
-                            style="
-                              color: #64748b;
-                              font-size: 12px;
-                              word-break: break-all;
-                            "
-                          >
-                            {{ item.url }}
-                          </div>
-                        </div>
-                      </a-list-item>
-                    </template>
-                  </a-list>
-                </div>
+                        </a-list-item>
+                      </template>
+                    </a-list>
+                  </div>
 
-                <a-textarea
-                  :value="novelCrawlLogsText"
-                  readonly
-                  :auto-size="{ minRows: 6, maxRows: 12 }"
-                />
-              </div>
+                  <!-- Logs Textarea -->
+                  <div class="logs-section">
+                    <div class="subsection-title">运行日志</div>
+                    <a-textarea
+                      :value="novelCrawlLogsText"
+                      readonly
+                      :auto-size="{ minRows: 8, maxRows: 16 }"
+                      class="logs-textarea"
+                      placeholder="暂无日志"
+                    />
+                  </div>
+                </a-collapse-panel>
+              </a-collapse>
             </div>
           </a-tab-pane>
         </a-tabs>
@@ -1553,30 +1654,58 @@
     <a-modal
       v-model:open="helpModalVisible"
       title="使用说明"
-      width="860px"
+      width="920px"
       :footer="null"
     >
       <div class="help-modal-body">
         <h3>快速流程</h3>
         <ol>
-          <li>输入 URL，点击「加载页面」</li>
-          <li>切换到「选取模式」，在预览页点击元素生成选择器</li>
+          <li>输入 URL，点击「加载页面」或按 <kbd>Ctrl+Enter</kbd></li>
+          <li>切换到「选取模式」<kbd>Ctrl+I</kbd>，在预览页点击元素生成选择器</li>
           <li>在「字段配置」里配置字段名、属性类型与清洗规则</li>
           <li>在「数据预览」里验证单条/列表提取结果</li>
           <li>
-            在「任务执行」里批量抓取并导出 JSON/CSV 或「生成代码」导出脚本
+            在「任务执行」里批量抓取并导出 JSON/CSV 或「生成代码」<kbd>Ctrl+K</kbd> 导出脚本
           </li>
         </ol>
+
+        <h3>键盘快捷键</h3>
+        <div class="shortcuts-grid">
+          <div class="shortcut-item">
+            <kbd>Ctrl</kbd> + <kbd>L</kbd>
+            <span>聚焦 URL 输入框</span>
+          </div>
+          <div class="shortcut-item">
+            <kbd>Ctrl</kbd> + <kbd>I</kbd>
+            <span>切换选取模式</span>
+          </div>
+          <div class="shortcut-item">
+            <kbd>Ctrl</kbd> + <kbd>R</kbd>
+            <span>刷新页面</span>
+          </div>
+          <div class="shortcut-item">
+            <kbd>Ctrl</kbd> + <kbd>S</kbd>
+            <span>保存配置</span>
+          </div>
+          <div class="shortcut-item">
+            <kbd>Ctrl</kbd> + <kbd>K</kbd>
+            <span>生成代码</span>
+          </div>
+          <div class="shortcut-item">
+            <kbd>ESC</kbd>
+            <span>关闭弹窗/退出选取</span>
+          </div>
+        </div>
 
         <h3>顶部按钮</h3>
         <ul>
           <li>
-            <b>加载页面</b>：请求网页并在左侧 iframe 展示，同时更新预览解析源
+            <b>加载页面</b>：请求网页并在左侧 iframe 展示,同时更新预览解析源
             HTML。
           </li>
           <li>
             <b>请求设置</b>：配置
-            Headers、超时、代理、证书策略，影响加载与任务执行。
+            Headers、超时、代理、证书策略,影响加载与任务执行。
           </li>
           <li><b>生成代码</b>：生成 Node.js(Cheerio)/Python(BS4) 脚本。</li>
           <li><b>规则管理</b>：导入/导出规则配置；保存/加载本地模板。</li>
@@ -1584,32 +1713,39 @@
 
         <h3>字段配置</h3>
         <ul>
-          <li><b>selector</b>：CSS 选择器，来自选取模式或手动填写。</li>
+          <li><b>selector</b>：CSS 选择器,来自选取模式或手动填写。</li>
           <li><b>属性</b>：text/html/href/src/custom。</li>
           <li><b>清洗</b>：trim/regex/replace。</li>
-          <li><b>准星按钮</b>：在预览页高亮该选择器，快速确认是否选对。</li>
+          <li><b>准星按钮</b>：在预览页高亮该选择器,快速确认是否选对。</li>
         </ul>
 
         <h3>数据预览</h3>
         <ul>
           <li><b>单条模式</b>：整页提取 1 条数据对象。</li>
           <li>
-            <b>列表模式</b>：通过 listSelector 找到列表项，对每个 item
+            <b>列表模式</b>：通过 listSelector 找到列表项,对每个 item
             提取字段。
           </li>
         </ul>
 
         <h3>任务执行</h3>
         <ul>
-          <li><b>起始 URL</b>：每行一个 URL，可导入队列。</li>
+          <li><b>起始 URL</b>：每行一个 URL,可导入队列。</li>
           <li><b>并发/间隔/重试</b>：控制抓取速度与稳定性。</li>
           <li><b>链接发现</b>：从页面中按选择器提取链接并加入队列。</li>
           <li><b>下一页</b>：按选择器提取下一页链接并加入队列。</li>
-          <li><b>暂停/继续</b>：临时暂停请求，继续后恢复。</li>
+          <li><b>暂停/继续</b>：临时暂停请求,继续后恢复。</li>
           <li><b>更多设置</b>：结果去重、启动前清空结果/日志/失败等。</li>
           <li>
             <b>任务面板</b>：查看正在抓取、待抓取队列、失败记录与运行日志。
           </li>
+        </ul>
+
+        <h3>小说爬虫</h3>
+        <ul>
+          <li><b>目录解析</b>：解析小说章节目录,批量获取章节链接。</li>
+          <li><b>后端导出</b>：由后端高效抓取并生成 TXT/JSON 文件,速度快且不卡顿。</li>
+          <li><b>自定义清洗</b>：支持正则表达式清洗章节内容中的广告和无用文本。</li>
         </ul>
       </div>
     </a-modal>
@@ -1668,6 +1804,12 @@ import {
   QuestionCircleOutlined,
   ApiOutlined,
   BookOutlined,
+  LoadingOutlined,
+  PlayCircleOutlined,
+  SearchOutlined,
+  FilterOutlined,
+  CleanOutlined,
+  CloseCircleOutlined,
 } from "@ant-design/icons-vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -2052,7 +2194,8 @@ const buildRequestHeadersObject = () => {
 };
 
 const canFetch = computed(() => {
-  return !loading.value && !!(targetUrl.value || "").trim();
+  const url = targetUrl.value?.trim();
+  return !loading.value && !!url && url.length > 0;
 });
 
 const {
@@ -2257,21 +2400,49 @@ const exportNovelCrawlerJson = async () => {
 const pasteUrl = async () => {
   try {
     const text = await navigator.clipboard.readText();
-    if (!text) return;
-    targetUrl.value = text.trim();
+    const trimmedText = text?.trim();
+
+    if (!trimmedText) {
+      message.info("剪贴板内容为空");
+      return;
+    }
+
+    targetUrl.value = trimmedText;
+    message.success("已粘贴网址");
+
+    // Auto-focus URL input for quick editing
+    await nextTick();
+    urlInputRef.value?.focus?.();
   } catch (e) {
+    console.error("Paste error:", e);
     message.error("粘贴失败（可能无权限）");
   }
 };
 
 const clearTargetUrl = () => {
   targetUrl.value = "";
+  // Focus the URL input after clearing
+  nextTick(() => {
+    urlInputRef.value?.focus?.();
+  });
+  message.info("已清空网址");
 };
 
 const openInBrowser = () => {
   const u = normalizedUrl(targetUrl.value);
-  if (!u) return;
-  window.open(u, "_blank");
+
+  if (!u) {
+    message.warning("请输入有效的网址");
+    return;
+  }
+
+  try {
+    window.open(u, "_blank", "noopener,noreferrer");
+    message.success("已在新标签页打开");
+  } catch (e) {
+    console.error("Open browser error:", e);
+    message.error("打开浏览器失败");
+  }
 };
 
 // --- Settings Logic ---
@@ -2288,37 +2459,58 @@ const removeHeader = (index) => {
 const formatFetchError = (err) => {
   try {
     if (!err) return "网络请求失败";
-    if (typeof err === "string") return err;
+
+    if (typeof err === "string") {
+      return err.length > 200 ? `${err.substring(0, 200)}...` : err;
+    }
+
     if (err instanceof Error) {
       const parts = [];
-      if (err.name) parts.push(err.name);
+
+      if (err.name && err.name !== "Error") parts.push(`[${err.name}]`);
       if (err.message) parts.push(err.message);
+
       const causeMsg =
         typeof err.cause === "string"
           ? err.cause
           : err.cause && typeof err.cause === "object" && "message" in err.cause
           ? err.cause.message
           : "";
-      if (causeMsg) parts.push(`cause: ${causeMsg}`);
-      return parts.join(" | ") || "网络请求失败";
+
+      if (causeMsg) parts.push(`原因: ${causeMsg}`);
+
+      const result = parts.join(" | ") || "网络请求失败";
+      return result.length > 200 ? `${result.substring(0, 200)}...` : result;
     }
+
     if (typeof err === "object") {
-      const msg = err.message || err.toString?.();
-      return msg || "网络请求失败";
+      const msg = err.message || err.toString?.() || JSON.stringify(err);
+      return msg.length > 200 ? `${msg.substring(0, 200)}...` : msg;
     }
-    return String(err);
-  } catch (_) {
-    return "网络请求失败";
+
+    const str = String(err);
+    return str.length > 200 ? `${str.substring(0, 200)}...` : str;
+  } catch (formatError) {
+    console.error("Error formatting error message:", formatError);
+    return "网络请求失败（错误信息格式化失败）";
   }
 };
 
 const fetchPage = async () => {
-  if (!targetUrl.value) {
+  const url = targetUrl.value?.trim();
+
+  if (!url) {
     message.warning("请输入目标网址");
     return;
   }
 
-  targetUrl.value = normalizedUrl(targetUrl.value);
+  // Normalize URL before fetching
+  targetUrl.value = normalizedUrl(url);
+
+  if (!targetUrl.value) {
+    message.error("无效的网址格式");
+    return;
+  }
 
   loading.value = true;
   isInspectorActive.value = false;
@@ -2338,6 +2530,7 @@ const fetchPage = async () => {
     addToHistory(targetUrl.value);
 
     message.success("页面加载成功");
+    await nextTick();
     scheduleRefreshPreview();
   } catch (error) {
     console.error("Scraper fetchPage error:", {
@@ -2361,26 +2554,65 @@ const handleKeydown = (e) => {
     navigator.platform && navigator.platform.toLowerCase().includes("mac");
   const mod = isMac ? e.metaKey : e.ctrlKey;
 
+  // ESC key - close modals
   if (key === "escape") {
     isInspectorActive.value = false;
     if (codeModalVisible.value) codeModalVisible.value = false;
     if (settingsVisible.value) settingsVisible.value = false;
+    if (helpModalVisible.value) helpModalVisible.value = false;
+    if (templateModalVisible.value) templateModalVisible.value = false;
+    return;
   }
 
   if (!mod) return;
 
-  if (key === "enter" && !e.isComposing) {
-    // Only fetch if focused on URL? Actually let's restrict this
-    // e.preventDefault();
-    // fetchPage();
-  } else if (key === "l") {
+  // Ctrl/Cmd + L - Focus URL input
+  if (key === "l") {
     e.preventDefault();
     urlInputRef.value?.focus?.();
-  } else if (key === "i") {
+    urlInputRef.value?.select?.();
+  }
+  // Ctrl/Cmd + I - Toggle inspector mode
+  else if (key === "i") {
     e.preventDefault();
     isInspectorActive.value = !isInspectorActive.value;
+    message.info(`选取模式: ${isInspectorActive.value ? "开启" : "关闭"}`);
+  }
+  // Ctrl/Cmd + R - Refresh page
+  else if (key === "r") {
+    e.preventDefault();
+    if (targetUrl.value && !loading.value) {
+      fetchPage();
+    }
+  }
+  // Ctrl/Cmd + S - Save configuration
+  else if (key === "s") {
+    e.preventDefault();
+    exportRules();
+  }
+  // Ctrl/Cmd + K - Generate code
+  else if (key === "k") {
+    e.preventDefault();
+    showCodeModal();
   }
 };
+
+// Watch field changes to trigger preview refresh (debounced)
+let fieldChangeTimer = null;
+watch(
+  () => fields.map((f) => ({ selector: f.selector, attr: f.attr, customAttr: f.customAttr })),
+  () => {
+    if (fieldChangeTimer) clearTimeout(fieldChangeTimer);
+    fieldChangeTimer = setTimeout(() => {
+      scheduleRefreshPreview();
+    }, 500); // Debounce 500ms
+  },
+  { deep: true }
+);
+
+watch([listMode, listSelector], () => {
+  scheduleRefreshPreview();
+});
 
 onMounted(() => {
   window.addEventListener("message", handleInspectorMessage);
@@ -2421,12 +2653,17 @@ watch([autoExitOnPick, autoAdvanceOnPick], () => {
 onUnmounted(() => {
   window.removeEventListener("message", handleInspectorMessage);
   window.removeEventListener("keydown", handleKeydown);
+
+  // Clear timers
+  if (fieldChangeTimer) clearTimeout(fieldChangeTimer);
+
   try {
     if (unlistenNovelCrawlProgress) unlistenNovelCrawlProgress();
   } catch (_) {}
   try {
     if (unlistenNovelCrawlFinished) unlistenNovelCrawlFinished();
   } catch (_) {}
+
   stopCrawl();
   disposePreview();
   disposeStorage();
@@ -2434,7 +2671,7 @@ onUnmounted(() => {
 
 // --- Field Management ---
 const addField = () => {
-  fields.push({
+  const newField = {
     name: `field_${fields.length + 1}`,
     selector: "",
     attr: "text",
@@ -2442,68 +2679,142 @@ const addField = () => {
     transformType: "none",
     transformPattern: "",
     transformReplacement: "",
-  });
+  };
+
+  fields.push(newField);
   currentFieldIndex.value = fields.length - 1;
+
+  // Scroll to new field after creation
+  nextTick(() => {
+    scrollToField(fields.length - 1);
+  });
+
+  message.success("已添加新字段");
 };
 
 const removeField = (index) => {
+  if (index < 0 || index >= fields.length) {
+    message.error("无效的字段索引");
+    return;
+  }
+
+  const fieldName = fields[index]?.name || "字段";
+
   fields.splice(index, 1);
+
+  // Adjust currentFieldIndex after removal
   if (currentFieldIndex.value >= fields.length) {
     currentFieldIndex.value = Math.max(0, fields.length - 1);
   } else if (index < currentFieldIndex.value) {
     currentFieldIndex.value--;
   }
+
+  message.success(`已删除字段: ${fieldName}`);
 };
 
 const moveField = (index, direction) => {
   const newIndex = index + direction;
-  if (newIndex < 0 || newIndex >= fields.length) return;
+
+  if (newIndex < 0 || newIndex >= fields.length) {
+    message.warning("无法移动字段");
+    return;
+  }
+
+  // Swap fields
   const temp = fields[index];
   fields[index] = fields[newIndex];
   fields[newIndex] = temp;
+
+  // Update current field index
   if (currentFieldIndex.value === index) {
     currentFieldIndex.value = newIndex;
   } else if (currentFieldIndex.value === newIndex) {
     currentFieldIndex.value = index;
   }
+
+  message.success(`已${direction > 0 ? "下移" : "上移"}字段`);
 };
 
 const duplicateField = (index) => {
-  if (index < 0 || index >= fields.length) return;
+  if (index < 0 || index >= fields.length) {
+    message.error("无效的字段索引");
+    return;
+  }
+
   const field = fields[index];
-  fields.splice(index + 1, 0, JSON.parse(JSON.stringify(field)));
+  const duplicatedField = JSON.parse(JSON.stringify(field));
+
+  // Modify the name to indicate it's a copy
+  duplicatedField.name = `${field.name}_copy`;
+
+  fields.splice(index + 1, 0, duplicatedField);
+  currentFieldIndex.value = index + 1;
+
+  nextTick(() => {
+    scrollToField(index + 1);
+  });
+
+  message.success("已复制字段");
 };
 
 const copyFieldSelector = async (index) => {
-  const text =
-    fields[index] && fields[index].selector
-      ? String(fields[index].selector)
-      : "";
-  if (!text) {
+  const selector = fields[index]?.selector;
+
+  if (!selector || typeof selector !== "string" || !selector.trim()) {
     message.info("暂无可复制的选择器");
     return;
   }
+
   try {
-    await navigator.clipboard.writeText(text);
-    message.success("选择器已复制");
+    await navigator.clipboard.writeText(selector);
+    message.success("选择器已复制到剪贴板");
   } catch (e) {
-    message.error("复制失败");
+    console.error("Copy selector error:", e);
+    message.error("复制失败（可能无权限）");
   }
 };
 
 const clearFieldSelector = (index) => {
-  if (fields[index]) fields[index].selector = "";
+  if (fields[index]) {
+    fields[index].selector = "";
+    message.info("已清空选择器");
+    scheduleRefreshPreview();
+  }
 };
 
 const tableColumns = computed(() => {
-  return fields
-    .filter((f) => f && f.name)
-    .map((f) => ({ title: f.name, dataIndex: f.name, key: f.name }));
+  const columns = fields
+    .filter((f) => f?.name)
+    .map((f) => ({
+      title: f.name,
+      dataIndex: f.name,
+      key: f.name,
+      ellipsis: true,
+      width: 150
+    }));
+  return columns;
 });
 
 const highlightFieldSelector = (index) => {
-  if (!fields[index]) return;
-  highlightSelectorInPreview(fields[index].selector);
+  if (!fields[index]) {
+    message.error("字段不存在");
+    return;
+  }
+
+  const selector = fields[index].selector;
+
+  if (!selector || !selector.trim()) {
+    message.warning("选择器为空，请先设置选择器");
+    return;
+  }
+
+  if (!processedHtml.value) {
+    message.warning("请先加载页面");
+    return;
+  }
+
+  highlightSelectorInPreview(selector);
+  message.info("已在预览中高亮显示");
 };
 </script>
 
@@ -2532,7 +2843,6 @@ const highlightFieldSelector = (index) => {
   overflow: hidden;
   color: var(--text-primary);
   background-color: var(--bg-color);
-  padding: 16px;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
@@ -2825,6 +3135,17 @@ const highlightFieldSelector = (index) => {
   color: var(--accent-color);
   background: rgba(0,0,0,0.05);
   transform: rotate(30deg);
+}
+
+.browser-reload-icon.loading-spin {
+  animation: spin 1s linear infinite;
+  pointer-events: none;
+  color: var(--accent-color);
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .iframe-container {
@@ -3494,6 +3815,48 @@ const highlightFieldSelector = (index) => {
   margin-bottom: 6px;
 }
 
+.shortcuts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin: 16px 0;
+  padding: 20px;
+  background: #f9fafb;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.shortcut-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: white;
+  border-radius: 6px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  font-size: 14px;
+}
+
+.shortcut-item kbd {
+  display: inline-block;
+  padding: 3px 8px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+  background: linear-gradient(to bottom, #f9fafb 0%, #e5e7eb 100%);
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.shortcut-item span {
+  color: #6b7280;
+  flex: 1;
+}
+
 .task-tab-content {
   display: flex;
   flex-direction: column;
@@ -3657,4 +4020,496 @@ const highlightFieldSelector = (index) => {
   opacity: 0;
   transform: translateX(-20px);
 }
+
+/* === Novel Tab Styles === */
+.novel-tab-content {
+  padding: 20px !important;
+  background: #f8fafc !important;
+  gap: 20px;
+}
+
+.novel-status-card {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  border: 1px solid #e5e7eb;
+}
+
+.novel-alert {
+  margin-bottom: 16px;
+}
+
+.novel-alert-title {
+  font-weight: 700;
+  font-size: 15px;
+  color: #1f2937;
+}
+
+.novel-alert-desc {
+  margin-top: 4px;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.novel-status-tags {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.status-tag {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  font-size: 14px;
+  border-radius: 6px;
+  font-weight: 500;
+}
+
+.tag-label {
+  color: rgba(0, 0, 0, 0.5);
+  font-size: 12px;
+}
+
+.tag-value {
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.novel-section {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  border: 1px solid #e5e7eb;
+  margin-bottom: 20px;
+}
+
+.novel-section.export-section {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+}
+
+.export-section .novel-section-header .section-title,
+.export-section .novel-section-header .section-subtitle,
+.export-section .form-label {
+  color: white !important;
+}
+
+.novel-section-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid #f3f4f6;
+}
+
+.export-section .novel-section-header {
+  border-bottom-color: rgba(255, 255, 255, 0.2);
+}
+
+.section-icon {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.section-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.section-subtitle {
+  font-size: 13px;
+  color: #9ca3af;
+  margin-left: auto;
+}
+
+.novel-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.form-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  display: flex;
+  align-items: center;
+}
+
+.form-row {
+  display: flex;
+  gap: 16px;
+}
+
+.form-row > .form-group {
+  flex: 1;
+}
+
+.input-with-button {
+  display: flex;
+  gap: 8px;
+}
+
+.input-with-button .novel-input {
+  flex: 1;
+}
+
+.novel-input,
+.novel-select,
+.novel-textarea {
+  border-radius: 8px;
+  transition: all 0.3s;
+}
+
+.novel-input:focus,
+.novel-select:focus,
+.novel-textarea:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.filter-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.filter-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: #f9fafb;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+}
+
+.filter-label {
+  font-size: 13px;
+  color: #6b7280;
+  white-space: nowrap;
+}
+
+.action-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.primary-action-btn {
+  font-weight: 600;
+  height: 42px;
+  padding: 0 28px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
+  transition: all 0.3s;
+}
+
+.primary-action-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(59, 130, 246, 0.35);
+}
+
+.result-tag {
+  font-size: 14px;
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-weight: 600;
+}
+
+.chapters-list {
+  margin-top: 16px;
+}
+
+.list-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: #f9fafb;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+}
+
+.list-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.list-info {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.novel-chapters-list {
+  max-height: 400px;
+  overflow-y: auto;
+  border-radius: 8px;
+}
+
+.chapter-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 12px !important;
+  transition: background 0.2s;
+}
+
+.chapter-item:hover {
+  background: #f9fafb;
+}
+
+.chapter-index {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  font-weight: 700;
+  font-size: 13px;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
+}
+
+.chapter-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.chapter-title {
+  font-weight: 600;
+  color: #1f2937;
+  font-size: 14px;
+}
+
+.chapter-url {
+  color: #9ca3af;
+  font-size: 12px;
+  word-break: break-all;
+  font-family: 'Consolas', monospace;
+}
+
+.options-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.option-item {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px;
+  background: #f9fafb;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  transition: all 0.2s;
+}
+
+.option-item:hover {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+}
+
+.option-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.option-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.option-desc {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.params-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.param-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.param-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.param-hint {
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.json-fields-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.export-actions {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.export-btn {
+  height: 48px;
+  font-weight: 600;
+  font-size: 15px;
+  border-radius: 8px;
+  transition: all 0.3s;
+}
+
+.export-btn:hover {
+  transform: translateY(-2px);
+}
+
+.export-txt {
+  background: white;
+  color: #667eea;
+  border: 2px solid white;
+  box-shadow: 0 4px 12px rgba(255, 255, 255, 0.3);
+}
+
+.export-txt:hover {
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 6px 16px rgba(255, 255, 255, 0.4);
+}
+
+.export-json {
+  background: rgba(255, 255, 255, 0.15);
+  color: white;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+}
+
+.export-json:hover {
+  background: rgba(255, 255, 255, 0.25);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.novel-logs-collapse {
+  background: white;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.logs-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.failures-section,
+.logs-section {
+  margin-bottom: 16px;
+}
+
+.subsection-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 10px;
+  padding: 6px 12px;
+  background: #f9fafb;
+  border-radius: 6px;
+  border-left: 3px solid #3b82f6;
+}
+
+.failures-list {
+  max-height: 300px;
+  overflow-y: auto;
+  border-radius: 8px;
+}
+
+.failure-item {
+  padding: 12px !important;
+}
+
+.failure-info {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.failure-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.failure-time {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.failure-error {
+  color: #ef4444;
+  font-size: 13px;
+}
+
+.failure-url {
+  color: #9ca3af;
+  font-size: 12px;
+  word-break: break-all;
+  font-family: 'Consolas', monospace;
+  padding-left: 24px;
+}
+
+.logs-textarea {
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.logs-textarea::placeholder {
+  color: #64748b;
+}
+
 </style>
